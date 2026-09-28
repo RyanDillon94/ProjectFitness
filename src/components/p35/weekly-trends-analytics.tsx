@@ -65,7 +65,8 @@ export function WeeklyTrendsAnalytics() {
     const weeks: { weekLabel: string; score: number }[] = [];
     const today = new Date();
 
-    for (let w = 3; w >= 0; w--) {
+    // Count from 0 to 3 so the current week (0) is pushed first
+    for (let w = 0; w <= 3; w++) {
       const targetDate = new Date(today);
       targetDate.setDate(targetDate.getDate() - w * 7);
       
