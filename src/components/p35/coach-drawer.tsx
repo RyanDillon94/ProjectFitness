@@ -79,7 +79,21 @@ Trigger this specific structured format ONLY when the user explicitly asks to an
 - **Next Session Call:** [details]
 - **Athlete Notes Feedback:** [details]
 
-- Conclude ONLY workout analyses with a 3-bullet "Next Session Battle Plan".`;
+- Conclude ONLY workout analyses with a 3-bullet "Next Session Battle Plan".
+${
+  IS_PROJECT_35
+    ? ""
+    : `
+WORKOUT HISTORY RULES:
+- Every stored Hevy workout is a separate session.
+- Use the supplied WORKOUT ID and date/time to distinguish sessions.
+- Never assume two workouts are the same session merely because they contain the same exercises or similar weights.
+- Never claim that a workout has already been analysed simply because an older workout in the history looks similar.
+- When analysing a workout, analyse the specific workout identified as the CURRENT WORKOUT.
+- Historical workouts are provided for comparison and progression context only.
+- Do not invent RPE values when none were logged.
+- Do not invent exercises, sets, weights, distances, durations or notes.`
+}`;
 
 // ============================================================
 // PREFERRED GEMINI MODELS
@@ -123,6 +137,9 @@ function isCardioExercise(
     "bike",
     "rowing",
     "stair",
+    "bjj",
+    "grappling",
+    "wrestling",
   ];
 
   const matchesKeyword = cardioKeywords.some((k) =>
@@ -249,6 +266,171 @@ function formatWeight(
 }
 
 // ============================================================
+// STORED HEVY HISTORY (Ascension context)
+// ============================================================
+
+type StoredHevyWorkout = HevyWorkout & { id?: string };
+
+function hashString(input: string): string {
+  let hash = 2166136261;
+
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function getWorkoutId(workout: HevyWorkout): string {
+  const fingerprint = JSON.stringify({
+    title: workout.title?.trim().toLowerCase() ?? "",
+    startTime: workout.startTime ?? "",
+    exercises: workout.exercises.map((ex) => ({
+      title: ex.title?.trim().toLowerCase() ?? "",
+      notes: ex.notes ?? "",
+      sets: ex.sets.map((s: any) => ({
+        weightKg: s.weightKg ?? s.weight_kg ?? null,
+        weightLbs: s.weightLbs ?? s.weight_lbs ?? null,
+        reps: s.reps ?? null,
+        rpe: s.rpe ?? null,
+        distance_meters: s.distance_meters ?? s.distanceMeters ?? null,
+        duration_seconds: s.duration_seconds ?? s.durationSeconds ?? null,
+      })),
+    })),
+  });
+
+  return `hevy_${hashString(fingerprint)}`;
+}
+
+function parseWorkoutDate(rawDate: string | null | undefined): number {
+  if (!rawDate) return 0;
+
+  const value = rawDate.trim();
+  const ukMatch = value.match(
+    /^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/,
+  );
+
+  if (ukMatch) {
+    const [, day, month, year, hour = "0", minute = "0"] = ukMatch;
+
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+    ).getTime();
+  }
+
+  const native = new Date(value);
+
+  return Number.isNaN(native.getTime()) ? 0 : native.getTime();
+}
+
+function getStoredHevyHistory(): StoredHevyWorkout[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = localStorage.getItem("p35_hevy_workouts");
+    if (!raw) return [];
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter(
+      (item): item is StoredHevyWorkout =>
+        !!item &&
+        typeof item === "object" &&
+        typeof (item as StoredHevyWorkout).title === "string" &&
+        Array.isArray((item as StoredHevyWorkout).exercises),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function describeExercise(ex: HevyWorkout["exercises"][number]): string {
+  if (isCardioExercise(ex.title, ex.sets)) {
+    const cardioSummary = ex.sets
+      .map((s: any) => formatCardio(s))
+      .join(", ");
+    const notes = ex.notes ? ` | Notes: "${ex.notes}"` : "";
+
+    return `- ${ex.title} (Cardio/Conditioning): ${cardioSummary}${notes}`;
+  }
+
+  const setStr = ex.sets
+    .map((s: any) => {
+      const weightDisplay = formatWeight(s, ex.title);
+      const rpe = s.rpe != null ? ` @RPE${s.rpe}` : "";
+
+      return `${weightDisplay} x ${s.reps ?? "?"}${rpe}`;
+    })
+    .join(", ");
+
+  const lastSet = ex.sets[ex.sets.length - 1];
+  const rpeStr =
+    lastSet?.rpe != null ? ` | Final set RPE: ${lastSet.rpe}` : "";
+  const notesStr = ex.notes ? ` | Notes: "${ex.notes}"` : "";
+  const setNotesStr = lastSet?.notes
+    ? ` | Set notes: "${lastSet.notes}"`
+    : "";
+
+  return `- ${ex.title}: ${setStr}${rpeStr}${notesStr}${setNotesStr}`;
+}
+
+function buildHistoryLines(workout: HevyWorkout | null): string[] {
+  const sortedHistory = getStoredHevyHistory()
+    .map((item) => ({ ...item, id: item.id ?? getWorkoutId(item) }))
+    .sort(
+      (a, b) => parseWorkoutDate(a.startTime) - parseWorkoutDate(b.startTime),
+    );
+
+  let currentWorkoutId: string | null = null;
+
+  if (workout) {
+    currentWorkoutId = getWorkoutId(workout);
+
+    if (!sortedHistory.some((item) => item.id === currentWorkoutId)) {
+      sortedHistory.push({ ...workout, id: currentWorkoutId });
+    }
+  }
+
+  const recentHistory = sortedHistory.slice(-10);
+  const lines: string[] = [
+    "",
+    `HEVY WORKOUT HISTORY: ${recentHistory.length} stored session(s).`,
+  ];
+
+  if (recentHistory.length === 0) {
+    lines.push("No Hevy workout history stored yet.");
+  }
+
+  for (const historyWorkout of recentHistory) {
+    const id = historyWorkout.id ?? getWorkoutId(historyWorkout);
+
+    lines.push(
+      "",
+      `${currentWorkoutId === id ? "CURRENT WORKOUT" : "HISTORICAL WORKOUT"} — ID: ${id}`,
+      `Title: "${historyWorkout.title}"`,
+      `Date/time: ${historyWorkout.startTime ?? "unknown"}`,
+      ...historyWorkout.exercises.map(describeExercise),
+    );
+  }
+
+  if (workout && currentWorkoutId) {
+    lines.push(
+      "",
+      `IMPORTANT: The CURRENT WORKOUT for this request is ID ${currentWorkoutId}.`,
+      "Analyse this exact session when the user requests workout analysis. Historical sessions are comparison data only.",
+    );
+  }
+
+  return lines;
+}
+
+// ============================================================
 // BUILD LIVE COACH CONTEXT
 // ============================================================
 
@@ -283,6 +465,12 @@ function buildContext(
     `Bodyweight Target: ${getGoalWeight()} lbs (Latest logged: ${latest ?? "unknown"} lbs | Trend: ${trend})`,
     `Daily Nutrition/Habit Standards: ${DAILY_TARGETS.caloriesMin}–${DAILY_TARGETS.caloriesMax} kcal, ${DAILY_TARGETS.protein}g+ protein, ${DAILY_TARGETS.steps} steps daily.`,
   ];
+
+  if (!IS_PROJECT_35) {
+    lines.push(...buildHistoryLines(workout));
+
+    return lines.join("\n");
+  }
 
   if (workout) {
     lines.push(

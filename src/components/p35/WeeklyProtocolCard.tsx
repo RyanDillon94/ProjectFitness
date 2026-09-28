@@ -3,6 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Target, CheckCircle2, Plus, Trash2, Calendar, AlertCircle, Check, XCircle, MessageSquareText } from "lucide-react";
 import { toast } from "sonner";
 import { todayKey } from "@/lib/project35";
+import { IS_PROJECT_35 } from "@/lib/config";
+
+const GOAL_PLACEHOLDER = IS_PROJECT_35
+  ? "Add weekly target (e.g. Add treadmill finishers to 2 workouts)..."
+  : "Add weekly target (e.g. Complete 15 mins of mobility after 2 workouts)...";
 
 export type WeeklyProtocolGoal = {
   id: string;
@@ -387,7 +392,7 @@ export function WeeklyProtocolCard({ currentDate }: { currentDate?: string }) {
             <textarea
               ref={inputRef}
               rows={1}
-              placeholder="Add weekly target (e.g. Add treadmill finishers to 2 workouts)..."
+              placeholder={GOAL_PLACEHOLDER}
               value={newGoalText}
               onChange={(e) => setNewGoalText(e.target.value)}
               onKeyDown={(e) => {

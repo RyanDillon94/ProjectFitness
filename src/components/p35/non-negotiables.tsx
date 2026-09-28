@@ -135,11 +135,12 @@ export function NonNegotiables({ userId, onDateChange }: { userId: string | null
 
       dayHabits.forEach((h) => {
         const labelLower = h.label.toLowerCase();
-        const isWeekdayOnly = 
-          h.key === "workout_complete" || 
-          h.key === "early_morning" || 
-          labelLower.includes("workout") || 
-          labelLower.includes("6:00 am");
+        const isLegacyWeekday =
+          h.key === "workout_complete" ||
+          h.key === "early_morning" ||
+          labelLower.includes("workout") ||
+          /\d{1,2}:\d{2}\s*[ap]m/i.test(labelLower);
+        const isWeekdayOnly = h.isWeekdayOnly ?? isLegacyWeekday;
 
         if (isWeekend && isWeekdayOnly) {
           return;
