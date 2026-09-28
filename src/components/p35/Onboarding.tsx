@@ -639,7 +639,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ============================================================
+  //   // ============================================================
   // IMPORT JSON PROTOCOL
   // ============================================================
 
@@ -650,12 +650,21 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const content = event.target?.result as string;
+        let content = event.target?.result as string;
+        
+        // Clean up markdown formatting if the AI saved it with backticks
+        content = content.trim();
+        if (content.startsWith("```json")) {
+          content = content.replace(/^```json\n?/, "").replace(/\n?```$/, "");
+        } else if (content.startsWith("```")) {
+          content = content.replace(/^```\n?/, "").replace(/\n?```$/, "");
+        }
+
         const profile = JSON.parse(content);
 
         // Basic validation to ensure it's a Project Ascension protocol
         if (!profile.projectName || !profile.phases) {
-          throw new Error("Invalid protocol JSON structure.");
+          throw new Error("Missing required keys: projectName or phases.");
         }
 
         // Preserve API keys
@@ -675,7 +684,9 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
         onComplete();
       } catch (err) {
         console.error("Import error:", err);
-        toast.error("Failed to parse JSON file. Ensure it is a valid protocol.");
+        // Provide a more specific error message if possible
+        const errMsg = err instanceof Error ? err.message : "Ensure it is a valid protocol.";
+        toast.error(`Failed to parse JSON file. ${errMsg}`);
       }
       
       // Reset the input so the same file can be selected again if needed
@@ -685,8 +696,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
     };
     reader.readAsText(file);
   };
-
-  // ============================================================
+// ============================================================
   // AUTO-SCROLL
   // ============================================================
 
