@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Key, Send, Loader2, Dumbbell } from "lucide-react";
+import { Key, Send, Loader2, Dumbbell, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 // ============================================================
@@ -637,6 +637,54 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ============================================================
+  // IMPORT JSON PROTOCOL
+  // ============================================================
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const profile = JSON.parse(content);
+
+        // Basic validation to ensure it's a Project Ascension protocol
+        if (!profile.projectName || !profile.phases) {
+          throw new Error("Invalid protocol JSON structure.");
+        }
+
+        // Preserve API keys
+        const currentApiKey = localStorage.getItem("p35_gemini_api_key");
+        const currentHevyKey = localStorage.getItem("p35_hevy_api_key");
+
+        localStorage.clear();
+
+        if (currentApiKey) localStorage.setItem("p35_gemini_api_key", currentApiKey);
+        if (currentHevyKey) localStorage.setItem("p35_hevy_api_key", currentHevyKey);
+
+        // Save the imported profile
+        localStorage.setItem("ascension_user_profile", JSON.stringify(profile));
+        localStorage.setItem("p35_setup_complete", "true");
+
+        toast.success("Protocol Imported Successfully.");
+        onComplete();
+      } catch (err) {
+        console.error("Import error:", err);
+        toast.error("Failed to parse JSON file. Ensure it is a valid protocol.");
+      }
+      
+      // Reset the input so the same file can be selected again if needed
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
 
   // ============================================================
   // AUTO-SCROLL
@@ -907,7 +955,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           // MODEL FAILED
           // ====================================================
 
-          lastErrorMsg = data.error?.message || `HTTP ${res.status} from ${model}`;
+          lastErrorMsg = data.error?.message || `HTTP ${res.status} from${model}`;
 
           console.warn(`Gemini model ${model} failed:`, lastErrorMsg);
         } catch (modelErr) {
@@ -1325,6 +1373,33 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
             <Button className="w-full h-12 mt-6 font-bold" onClick={handleStartChat}>
               Boot AI Coach
+            </Button>
+
+            {/* IMPORT SECTION */}
+            <div className="relative mt-6">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border/40" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">Or</span>
+              </div>
+            </div>
+
+            <input
+              type="file"
+              accept=".json"
+              ref={fileInputRef}
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+            
+            <Button
+              variant="outline"
+              className="w-full h-12 mt-4 font-bold border-border/40 hover:bg-surface-2/50 text-foreground"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="mr-2 size-4" />
+              Import Existing Protocol
             </Button>
           </div>
         </div>
