@@ -639,7 +639,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  //   // ============================================================
+  // ============================================================
   // IMPORT JSON PROTOCOL
   // ============================================================
 
@@ -660,7 +660,20 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           content = content.replace(/^```\n?/, "").replace(/\n?```$/, "");
         }
 
-        const profile = JSON.parse(content);
+        const parsedData = JSON.parse(content);
+        
+        let profile;
+        let isFullBackup = false;
+
+        // Check if this is a full app backup rather than a raw AI response
+        if (parsedData.ascension_user_profile) {
+          profile = typeof parsedData.ascension_user_profile === "string" 
+            ? JSON.parse(parsedData.ascension_user_profile) 
+            : parsedData.ascension_user_profile;
+          isFullBackup = true;
+        } else {
+          profile = parsedData;
+        }
 
         // Basic validation to ensure it's a Project Ascension protocol
         if (!profile.projectName || !profile.phases) {
@@ -676,15 +689,23 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
         if (currentApiKey) localStorage.setItem("p35_gemini_api_key", currentApiKey);
         if (currentHevyKey) localStorage.setItem("p35_hevy_api_key", currentHevyKey);
 
-        // Save the imported profile
-        localStorage.setItem("ascension_user_profile", JSON.stringify(profile));
-        localStorage.setItem("p35_setup_complete", "true");
+        // Restore data
+        if (isFullBackup) {
+          // Restore all historical app state (workouts, messages, etc.)
+          Object.keys(parsedData).forEach(key => {
+            const value = parsedData[key];
+            localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+          });
+        } else {
+          // It's a fresh AI protocol, just save the profile
+          localStorage.setItem("ascension_user_profile", JSON.stringify(profile));
+          localStorage.setItem("p35_setup_complete", "true");
+        }
 
-        toast.success("Protocol Imported Successfully.");
+        toast.success(isFullBackup ? "System Backup Restored." : "Protocol Imported Successfully.");
         onComplete();
       } catch (err) {
         console.error("Import error:", err);
-        // Provide a more specific error message if possible
         const errMsg = err instanceof Error ? err.message : "Ensure it is a valid protocol.";
         toast.error(`Failed to parse JSON file. ${errMsg}`);
       }
@@ -696,7 +717,8 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
     };
     reader.readAsText(file);
   };
-// ============================================================
+
+  // ============================================================
   // AUTO-SCROLL
   // ============================================================
 
