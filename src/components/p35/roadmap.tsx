@@ -1,8 +1,8 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getPhases, getAscensionProfile, type PhaseDef } from "@/lib/project35";
-import { IS_PROJECT_35 } from "@/lib/config";
+import { getPhases, type PhaseDef } from "@/lib/project35";
+import { getPlan } from "@/lib/planEngine";
 import { getDeloadOffset } from "@/utils/dateUtils";
 import { Calendar, Map } from "lucide-react";
 import { RecalibrateModal } from "@/components/p35/RecalibrateModal";
@@ -65,10 +65,11 @@ function getPhaseWindow(phase: PhaseDef, offsetDays: number): string {
 
 export function Roadmap() {
   const offsetDays = getDeloadOffset();
+  const plan = getPlan();
   const phases = getPhases();
   const firstPhase = phases[0];
   const lastPhase = phases[phases.length - 1];
-  const footerQuote = IS_PROJECT_35 ? null : getAscensionProfile().footerQuote;
+  const footerQuote = plan.footerQuote;
 
   if (!firstPhase || !lastPhase) {
     return (
@@ -93,7 +94,7 @@ export function Roadmap() {
     <section className="panel p-5">
       <div className="flex items-center gap-2">
         <Map className="size-5 text-primary" />
-        <h2 className="text-lg font-bold">{IS_PROJECT_35 ? "3-Year Macro Roadmap" : "Macro Roadmap"}</h2>
+        <h2 className="text-lg font-bold">{plan.roadmapTitle || "Macro Roadmap"}</h2>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
         {phases.length} phases. {blocksPerPhase} blocks each.{" "}
@@ -173,27 +174,14 @@ export function Roadmap() {
         ))}
       </Accordion>
 
-      {!IS_PROJECT_35 && (
-        <div className="mt-6 flex justify-center border-t border-border/40 pb-2 pt-4">
-          <RecalibrateModal />
-        </div>
-      )}
+      <div className="mt-6 flex justify-center border-t border-border/40 pb-2 pt-4">
+        <RecalibrateModal />
+      </div>
 
-      {IS_PROJECT_35 ? (
-        <>
-          <br />
-          <div className="flex flex-col items-center">
-            <p className="text-center text-sm italic tracking-wide text-primary/90 font-medium">
-              &ldquo;Only cunts drink on weekdays... Don&apos;t be a cunt.&rdquo;
-            </p>
-          </div>
-        </>
-      ) : (
-        footerQuote && (
-          <div className="space-y-1.5 pt-4 text-center">
-            <p className="text-sm font-bold italic text-primary">&ldquo;{footerQuote}&rdquo;</p>
-          </div>
-        )
+      {footerQuote && (
+        <div className="space-y-1.5 pt-4 text-center">
+          <p className="text-sm font-bold italic text-primary">&ldquo;{footerQuote}&rdquo;</p>
+        </div>
       )}
     </section>
   );

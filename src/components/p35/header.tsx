@@ -1,12 +1,14 @@
 import { Badge } from "@/components/ui/badge";
-import { getActiveBlockCountdown, getAscensionProfile } from "@/lib/project35";
+import { getActiveBlockCountdown } from "@/lib/project35";
+import { getPlan } from "@/lib/planEngine";
 import { APP_NAME, APP_TAGLINE, IS_PROJECT_35 } from "@/lib/config";
 import { Calendar, Flame, ShieldHalf, Target } from "lucide-react";
 
 export function DashboardHeader() {
-  const profile = IS_PROJECT_35 ? null : getAscensionProfile();
-  const projectName = profile?.projectName || APP_NAME;
-  const tagline = profile?.tagline || APP_TAGLINE;
+  const plan = getPlan();
+  const projectName = plan.projectName || APP_NAME;
+  const tagline = plan.tagline || APP_TAGLINE;
+  const headline = plan.headline || "";
 
   const {
     phaseId,
@@ -27,16 +29,10 @@ export function DashboardHeader() {
         </div>
         <div className="min-w-0 flex-1">
           <p className="stat-label">Character sheet</p>
-          {IS_PROJECT_35 ? (
-            <h1 className="text-2xl leading-tight font-bold">
-              Project 35: <span className="text-primary">The Undeniable Standard</span>
-            </h1>
-          ) : (
-            <h1 className="text-2xl leading-tight font-bold">
-              {projectName}: <br />
-              <span className="text-primary">Same Man, Higher Standards</span>
-            </h1>
-          )}
+          <h1 className="text-2xl leading-tight font-bold">
+            {projectName}: {IS_PROJECT_35 ? null : <br />}
+            <span className="text-primary">{headline}</span>
+          </h1>
         </div>
       </div>
 

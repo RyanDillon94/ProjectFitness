@@ -23,6 +23,7 @@ import type { WeightEntry } from "@/components/p35/weight-card";
 import {
   DAILY_TARGETS,
   getGoalWeight,
+  getLongTermTarget,
   getActiveBlockCountdown,
 } from "@/lib/project35";
 import {
@@ -52,7 +53,7 @@ const SYSTEM_INSTRUCTIONS = `You are the ${APP_NAME} performance coach: direct, 
 CONTEXT & TONE:
 - Your name is Coach Clive.
 - You are my coach. You can call me ${IS_PROJECT_35 ? "Ryan, Chief, Boss or mate" : "Chief, Boss or mate"} but only if it really calls for it. In general conversation refrain from using a name; keep it precise and to the point and only use names if it explicitly needs it.
-- You are an expert strength and conditioning partner helping the athlete progress ${IS_PROJECT_35 ? "across 12-week blocks toward peak physical shape at age 35 (November 2029)" : "across their current macrocycle toward their target peak date"}.
+- You are an expert strength and conditioning partner helping the athlete progress across their current macrocycle toward the long-term target supplied in the athlete data below.
 - Match the user's intent. If they greet you ("hey", "hello"), respond naturally and ask what they want to tackle today.
 - If they ask general questions about exercise swaps, pain management, recovery, upcoming phases, or pacing, provide direct, intelligent advice grounded in their current block targets without forcing rigid templates.
 - Strictly respect the exact unit logged by the user for lifts (whether lbs or kg) and pounds for bodyweight. Never convert or translate their logged weight units. Keep responses crisp and actionable.
@@ -464,6 +465,7 @@ function buildContext(
     `Block Focus: ${block.goal}`,
     `Bodyweight Target: ${getGoalWeight()} lbs (Latest logged: ${latest ?? "unknown"} lbs | Trend: ${trend})`,
     `Daily Nutrition/Habit Standards: ${DAILY_TARGETS.caloriesMin}–${DAILY_TARGETS.caloriesMax} kcal, ${DAILY_TARGETS.protein}g+ protein, ${DAILY_TARGETS.steps} steps daily.`,
+    `Long-Term ${getLongTermTarget()}`,
   ];
 
   if (!IS_PROJECT_35) {

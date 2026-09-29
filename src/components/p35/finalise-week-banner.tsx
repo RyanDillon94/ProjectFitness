@@ -3,8 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { 
   getActiveBlockDetails, 
-  getActiveBlockCountdown,
   getActiveHabits, 
+  getProgramWeekNumber,
   todayKey, 
   DAILY_TARGETS, 
   getGoalWeight 
@@ -131,15 +131,7 @@ export function FinaliseWeekBanner({ userId }: { userId: string | null }) {
         })) 
       : [];
 
-    let currentWeekNumber: number;
-    if (IS_PROJECT_35) {
-      const startDate = new Date("2026-09-07T00:00:00Z");
-      const diffTime = Math.abs(evaluationDateObj.getTime() - startDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      currentWeekNumber = Math.max(1, Math.ceil(diffDays / 7));
-    } else {
-      currentWeekNumber = Math.max(1, getActiveBlockCountdown().currentWeek);
-    }
+    const currentWeekNumber = getProgramWeekNumber(evaluationDateObj);
     
     const isPhotoWeek = evaluationDateObj.getUTCDay() === 0 && currentWeekNumber % 4 === 0;
 

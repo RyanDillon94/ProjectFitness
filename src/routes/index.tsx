@@ -14,28 +14,20 @@ import { FinaliseWeekBanner } from "@/components/p35/finalise-week-banner";
 import { useUserSettings, useWeighIns } from "@/lib/p35-cloud";
 import { WeeklyTrendsAnalytics } from "@/components/p35/weekly-trends-analytics";
 import { MissionArchiveCard } from "@/components/p35/mission-archive-card";
-import { todayKey, getAscensionProfile } from "@/lib/project35";
+import { todayKey } from "@/lib/project35";
+import { getPlanBlueprint, needsOnboarding, seedPlanIfMissing } from "@/lib/planEngine";
 import { Onboarding } from "@/components/p35/Onboarding";
-import { APP_HEADLINE, IS_PROJECT_35 } from "@/lib/config";
+import { APP_HEADLINE } from "@/lib/config";
 import { TestModePanel } from '../components/TestModePanel';
-
-const PROJECT_35_DESCRIPTION =
-  "Dark fitness command centre: daily non-negotiables, Friday weight trend, Hevy sync, AI coach and a 3-year phase roadmap to November 2029.";
-const PROJECT_35_OG_DESCRIPTION =
-  "Track the cut, the 6:00 AM habit, weekly weight averages and every training phase on the road to 35.";
 
 export const Route = createFileRoute("/")({
   head: () => {
-    let title = APP_HEADLINE;
-    let description = PROJECT_35_DESCRIPTION;
-    let ogDescription = PROJECT_35_OG_DESCRIPTION;
-
-    if (!IS_PROJECT_35) {
-      const profile = getAscensionProfile();
-      title = `${profile.projectName ?? "Project Ascension"}: ${profile.tagline ?? "Fitness Protocol"}`;
-      description = profile.footerQuote ?? "";
-      ogDescription = description;
-    }
+    // Metadata is rendered before the client plan is readable, so it comes from
+    // the tenant blueprint rather than the live engine state.
+    const blueprint = getPlanBlueprint();
+    const title = APP_HEADLINE;
+    const description = blueprint.tagline;
+    const ogDescription = blueprint.footerQuote || blueprint.tagline;
 
     return {
       meta: [
@@ -56,10 +48,11 @@ function Index() {
   const [needsSetup, setNeedsSetup] = useState(false);
 
   useEffect(() => {
+    // Project 35 seeds its blueprint into the shared engine state and skips
+    // onboarding; Ascension is routed into the wizard until it has a plan.
+    seedPlanIfMissing();
     setIsMounted(true);
-    if (!IS_PROJECT_35) {
-      setNeedsSetup(localStorage.getItem("p35_setup_complete") !== "true");
-    }
+    setNeedsSetup(needsOnboarding());
   }, []);
 
   // Decide what to render only once the client has mounted, so the server and

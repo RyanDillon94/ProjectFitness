@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { APP_NAME, IS_PROJECT_35 } from "@/lib/config";
+import { APP_NAME } from "@/lib/config";
 
 const Input = z.object({
   messages: z
@@ -14,9 +14,10 @@ const Input = z.object({
   context: z.string().optional(),
 });
 
-const TARGETS_RULE = IS_PROJECT_35
-  ? "- Tie advice to the athlete's targets: 2,000-2,400 kcal, 200g+ protein, 12,500 steps, 6:00 AM Weekday lifts, goal weight 190 lbs by end of Phase 1, arriving at 35 in November 2029 in undeniable shape."
-  : "- Tie all advice directly to the athlete's specific targets (calories, protein, steps, routine, timeline, and goal weight) provided in the Athlete Data context below. Do not assume default metrics.";
+// Targets live in the plan engine on the client, so the server prompt always
+// defers to the athlete data the client sends with each request.
+const TARGETS_RULE =
+  "- Tie all advice directly to the athlete's specific targets (calories, protein, steps, routine, timeline, and goal weight) provided in the Athlete Data context below. Do not assume default metrics.";
 
 const SYSTEM = `You are the ${APP_NAME} performance coach: direct, no-fluff, and technically sharp.
 Rules:

@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { APP_HEADLINE, APP_NAME, IS_PROJECT_35 } from "@/lib/config";
+import { getPlanBlueprint } from "@/lib/planEngine";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -85,9 +86,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: APP_HEADLINE },
       {
         name: "description",
-        content: IS_PROJECT_35
-          ? "Dark fitness command centre for the road to November 2029."
-          : "Dark fitness command centre for the climb.",
+        content: `Dark fitness command centre. ${getPlanBlueprint().tagline}`,
       },
       { name: "theme-color", content: "#0f172a" },
       { name: "apple-mobile-web-app-capable", content: "yes" },

@@ -2,8 +2,8 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { getAscensionProfile } from "@/lib/project35";
-import { APP_NAME, IS_PROJECT_35 } from "@/lib/config";
+import { getPlan } from "@/lib/planEngine";
+import { APP_NAME } from "@/lib/config";
 
 function isAppKey(key: string) {
   return key.startsWith("p35_") || key.startsWith("ascension_");
@@ -30,9 +30,7 @@ export function DataBackupCard() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      const projectName = IS_PROJECT_35
-        ? APP_NAME
-        : getAscensionProfile()?.projectName || APP_NAME;
+      const projectName = getPlan().projectName || APP_NAME;
       const safeProjectName = projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
       link.download = `${safeProjectName}-backup-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(link);

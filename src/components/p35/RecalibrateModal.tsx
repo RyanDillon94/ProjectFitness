@@ -11,6 +11,9 @@ import {
 } from "@/components/ui/dialog";
 import { Check, Loader2, Send, Settings2, X } from "lucide-react";
 import { toast } from "sonner";
+import { APP_NAME } from "@/lib/config";
+import { getPlan, savePlan } from "@/lib/planEngine";
+import type { PlanState } from "@/lib/planTypes";
 
 // ============================================================
 // FORMATTED AI MESSAGE
@@ -153,11 +156,16 @@ export function RecalibrateModal() {
   // ============================================================
 
   const getSystemPrompt = () => {
-    const currentProfile = localStorage.getItem("ascension_user_profile") || "{}";
+    const currentProfile = JSON.stringify(getPlan(), null, 2);
 
-    return `You are the Project Ascension performance coach.
+    return `You are the ${APP_NAME} performance coach.
 
-You are helping the athlete recalibrate their existing 12-month protocol.
+You are helping the athlete recalibrate their existing roadmap.
+
+The protocol below is the live engine state. Every phase, block, start/end date,
+daily target and habit in it drives the app directly, so any structural change
+(shifting dates for a holiday, advancing a phase, switching from a cut to a bulk,
+adjusting calorie floors or ceilings) must be expressed as an edit to this object.
 
 Your job is NOT to blindly obey requests.
 
@@ -230,6 +238,8 @@ The updated protocol MUST:
 
 - Maintain the exact same JSON schema.
 - Preserve all existing information unless the athlete explicitly requested a change.
+- Keep phase and block start/end dates in YYYY-MM-DD form, contiguous and in order.
+- When pausing or shifting the plan, offset the affected block dates rather than deleting blocks.
 - Preserve all unrelated values.
 - Keep habits as daily actionable behaviours.
 - Keep dailyTargets fully populated.
@@ -452,7 +462,7 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
     }
 
     try {
-      localStorage.setItem("ascension_user_profile", JSON.stringify(pendingUpdate.profile));
+      savePlan({ ...getPlan(), ...(pendingUpdate.profile as Partial<PlanState>) } as PlanState);
 
       toast.success("Protocol Recalibrated. Reloading Command Centre.");
 
