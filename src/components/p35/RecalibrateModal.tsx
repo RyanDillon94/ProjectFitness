@@ -283,8 +283,7 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
       setMessages([
         {
           role: "model",
-          text: "Coach online. What are we recalibrating today?
-Remember... don't be making changes just because your gay and can't keep up with the plan, this recalibrate function is for legit plan updates" ,
+          text: "Coach online. What are we recalibrating today? Remember... don't be making changes just because your gay and can't keep up with the plan, this recalibrate function is for legit plan updates" ,
         },
       ]);
     }
