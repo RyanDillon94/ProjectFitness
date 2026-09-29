@@ -280,13 +280,18 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
     setIsOpen(open);
 
     if (open && messages.length === 0) {
-      setMessages([
-        {
-          role: "model",
-          text: "Coach online. What are we recalibrating today? \nRemember... don't be making changes just because your gay and can't keep up with the plan, this recalibrate function is for legit plan updates only" ,
-        },
-      ]);
-    }
+  setMessages([
+    {
+      role: "model",
+      text: "Coach online. What are we recalibrating today?",
+    },
+    {
+      role: "model",
+      text: "Remember... don't be making changes just because you're gay and can't keep up with the plan, this recalibrate function is for legit plan updates only.",
+    },
+  ]);
+}
+
 
     if (!open) {
       setPendingUpdate(null);
