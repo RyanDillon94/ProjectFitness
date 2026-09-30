@@ -245,8 +245,9 @@ function formatWeight(
 
   const titleLower = exerciseTitle.toLowerCase();
 
+  // FIX: Explicitly exclude lat pulldown from the cable conversion
   const isCableOrLbs =
-    titleLower.includes("cable") ||
+    (titleLower.includes("cable") && !titleLower.includes("lat pulldown")) ||
     titleLower.includes("pushdown") ||
     titleLower.includes("fly");
 
