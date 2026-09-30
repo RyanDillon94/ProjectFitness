@@ -42,7 +42,9 @@ import {
 import { toast } from "sonner";
 import { APP_NAME, IS_PROJECT_35 } from "@/lib/config";
 
-const COACH_NAME = IS_PROJECT_35 ? "Coach Clive" : "Coach Neil is Gay";
+const COACH_NAME = IS_PROJECT_35
+  ? "Coach Clive"
+  : "Coach Neil is Gay";
 
 type Msg = CoachMsg;
 
@@ -55,7 +57,9 @@ const SYSTEM_INSTRUCTIONS = `You are the ${APP_NAME} performance coach: direct, 
 CONTEXT & TONE:
 - Your name is ${COACH_NAME}.
 - You are my coach. You can call me ${
-  IS_PROJECT_35 ? "Ryan, Chief, Boss or mate" : "Gay Cunt, Chief, Boss or mate"
+  IS_PROJECT_35
+    ? "Ryan, Chief, Boss or mate"
+    : "Gay Cunt, Chief, Boss or mate"
 } but only if it really calls for it, " Gay cunt" is specifically if I am moaning. In general conversation refrain from using a name; keep it precise and to the point and only use names if it explicitly needs it.
 
 - You are an expert strength and conditioning partner helping the athlete progress across their current macrocycle toward the long-term target supplied in the athlete data below.
@@ -124,14 +128,20 @@ WORKOUT HISTORY RULES:
 }`;
 
 // ============================================================
-// PREFERRED GEMINI MODELS
+// GEMINI MODEL PREFERENCE
 // ============================================================
 //
-// The model catalogue is discovered ONCE per API key and then
-// cached for the lifetime of this page session.
+// These are current Gemini text models. We try the newest
+// preferred model directly first.
 //
-// This removes a full Google model-list request from every
-// single coach message.
+// IMPORTANT:
+// We do NOT call /models before every message.
+// The first successful model is cached against the API key.
+// That means subsequent messages normally make exactly ONE
+// Gemini request.
+//
+// If the preferred models are unavailable for the key/project,
+// model discovery is used once as a fallback.
 //
 
 const PREFERRED_MODELS = [
@@ -140,36 +150,41 @@ const PREFERRED_MODELS = [
   "gemini-3.6-flash",
   "gemini-3.5-flash",
   "gemini-3.5-flash-lite",
-  "gemini-3.1-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-2.5-pro",
-  "gemini-1.5-flash",
-  "gemini-1.5-pro",
 ];
 
 // ============================================================
-// GEMINI MODEL CACHE
+// MODEL CACHE
 // ============================================================
 //
-// Cache is keyed by API key so changing the key automatically
-// causes a fresh discovery.
+// API key -> last successful model.
 //
-// We cache the PROMISE too, which prevents multiple simultaneous
-// requests from triggering duplicate model discovery calls.
+// This is deliberately separate from the old model-discovery
+// cache. We want the successful model to be on the hot path.
 //
+// Example:
+//
+// First message:
+//   3.8 -> success
+//
+// Every later message:
+//   3.8 -> success
+//
+// If 3.8 stops working:
+//   remove cache -> try fallback cascade.
+//
+
+const successfulModelCache =
+  new Map<string, string>();
 
 const modelDiscoveryCache =
   new Map<string, Promise<string[]>>();
 
+const unavailableModelCache =
+  new Map<string, Set<string>>();
+
 // ============================================================
 // HEVY HISTORY CACHE
 // ============================================================
-//
-// localStorage parsing is cached against the raw stored string.
-// If Hevy changes the stored data, the raw string changes and
-// the cache automatically refreshes.
-//
 
 let hevyHistoryRawCache: string | null = null;
 let hevyHistoryParsedCache: StoredHevyWorkout[] = [];
@@ -331,6 +346,10 @@ type StoredHevyWorkout = HevyWorkout & {
   id?: string;
 };
 
+// ============================================================
+// HASH
+// ============================================================
+
 function hashString(
   input: string,
 ): string {
@@ -354,6 +373,10 @@ function hashString(
     .toString(16)
     .padStart(8, "0");
 }
+
+// ============================================================
+// WORKOUT ID
+// ============================================================
 
 function getWorkoutId(
   workout: HevyWorkout,
@@ -411,13 +434,19 @@ function getWorkoutId(
   )}`;
 }
 
+// ============================================================
+// DATE PARSER
+// ============================================================
+
 function parseWorkoutDate(
   rawDate:
     | string
     | null
     | undefined,
 ): number {
-  if (!rawDate) return 0;
+  if (!rawDate) {
+    return 0;
+  }
 
   const value =
     rawDate.trim();
@@ -475,8 +504,17 @@ function getStoredHevyHistory(): StoredHevyWorkout[] {
       );
 
     if (!raw) {
-      hevyHistoryRawCache = null;
-      hevyHistoryParsedCache = [];
+      if (
+        hevyHistoryRawCache !==
+        null
+      ) {
+        hevyHistoryRawCache =
+          null;
+
+        hevyHistoryParsedCache =
+          [];
+      }
+
       return [];
     }
 
@@ -497,8 +535,10 @@ function getStoredHevyHistory(): StoredHevyWorkout[] {
     ) {
       hevyHistoryRawCache =
         raw;
+
       hevyHistoryParsedCache =
         [];
+
       return [];
     }
 
@@ -757,32 +797,11 @@ function buildContext(
     `Long-Term ${getLongTermTarget()}`,
   ];
 
-  const history =
-    buildHistoryLines(
+  lines.push(
+    ...buildHistoryLines(
       workout,
-    );
-
-  if (
-    history.length > 2
-  ) {
-    lines.push(
-      ...history,
-    );
-  } else if (workout) {
-    lines.push(
-      `LATEST WORKOUT LOGGED IN HEVY: "${workout.title}" on ${
-        workout.startTime ??
-        "recent"
-      }.`,
-      ...workout.exercises.map(
-        describeExercise,
-      ),
-    );
-  } else {
-    lines.push(
-      "No Hevy workout synced yet.",
-    );
-  }
+    ),
+  );
 
   return lines.join(
     "\n",
@@ -843,13 +862,8 @@ function getRecentRoutines(): string[] {
 }
 
 // ============================================================
-// DISCOVER AVAILABLE GEMINI MODELS
+// MODEL DISCOVERY FALLBACK
 // ============================================================
-//
-// IMPORTANT SPEED CHANGE:
-// This function is no longer called directly for every message.
-// getCachedAvailableModels() below caches the result per API key.
-//
 
 async function getAvailableModels(
   apiKey: string,
@@ -866,7 +880,6 @@ async function getAvailableModels(
   do {
     const query =
       new URLSearchParams({
-        key: apiKey,
         pageSize: "1000",
       });
 
@@ -888,6 +901,8 @@ async function getAvailableModels(
           headers: {
             "Content-Type":
               "application/json",
+            "x-goog-api-key":
+              apiKey,
           },
         },
       );
@@ -982,7 +997,7 @@ function getCachedAvailableModels(
   }
 
   console.log(
-    "Discovering Gemini models for this API key...",
+    "Gemini direct model cascade failed. Discovering models...",
   );
 
   const promise =
@@ -992,7 +1007,7 @@ function getCachedAvailableModels(
       .then(
         (models) => {
           console.log(
-            "Gemini models supporting generateContent:",
+            "Gemini discovered models:",
             models,
           );
 
@@ -1001,7 +1016,6 @@ function getCachedAvailableModels(
       )
       .catch(
         (error) => {
-          // Do not permanently cache a failed discovery.
           modelDiscoveryCache.delete(
             apiKey,
           );
@@ -1019,7 +1033,7 @@ function getCachedAvailableModels(
 }
 
 // ============================================================
-// FILTER TO TEXT CHAT MODELS
+// MODEL FILTERING
 // ============================================================
 
 function isUsableCoachModel(
@@ -1048,7 +1062,7 @@ function isUsableCoachModel(
 }
 
 // ============================================================
-// RANK MODELS
+// MODEL RANKING
 // ============================================================
 
 function rankModels(
@@ -1082,19 +1096,244 @@ function rankModels(
 }
 
 // ============================================================
-// CALL GEMINI
+// THINKING LEVEL
+// ============================================================
+//
+// Normal conversation:
+// LOW = faster response.
+//
+// Workout analysis / routine target:
+// MEDIUM = more reasoning.
+//
+// This only affects Gemini models which support the thinking
+// configuration. Gemini 3.8 and 3.7 both support low/medium/high.
+//
+
+function getThinkingLevel(
+  prompt: string,
+): "low" | "medium" {
+  const lower =
+    prompt.toLowerCase();
+
+  const analysisKeywords = [
+    "analyse",
+    "analyze",
+    "analysis",
+    "review",
+    "evaluate",
+    "session breakdown",
+    "workout breakdown",
+    "workout analysis",
+    "last session",
+    "previous session",
+    "progression",
+    "progression call",
+    "targets",
+    "target",
+    "rpe",
+    "hevy",
+    "routine",
+  ];
+
+  const requiresMoreReasoning =
+    analysisKeywords.some(
+      (keyword) =>
+        lower.includes(
+          keyword,
+        ),
+    );
+
+  return requiresMoreReasoning
+    ? "medium"
+    : "low";
+}
+
+// ============================================================
+// RETRY CLASSIFICATION
 // ============================================================
 
-async function callGemini(
+function shouldTryAnotherModel(
+  status: number,
+): boolean {
+  return (
+    status === 400 ||
+    status === 403 ||
+    status === 404
+  );
+}
+
+// ============================================================
+// SSE STREAM READER
+// ============================================================
+//
+// Gemini's streamGenerateContent endpoint returns SSE data.
+// This reader extracts the text from each GenerateContentResponse
+// chunk and sends it to the UI immediately.
+//
+
+async function readGeminiStream(
+  response: Response,
+  onText: (
+    text: string,
+  ) => void,
+): Promise<string> {
+  if (!response.body) {
+    throw new Error(
+      "Gemini returned no response stream.",
+    );
+  }
+
+  const reader =
+    response.body.getReader();
+
+  const decoder =
+    new TextDecoder();
+
+  let buffer = "";
+  let fullText = "";
+
+  const processEvent =
+    (event: string) => {
+      const lines =
+        event.split(
+          /\r?\n/,
+        );
+
+      for (
+        const line of lines
+      ) {
+        if (
+          !line.startsWith(
+            "data:",
+          )
+        ) {
+          continue;
+        }
+
+        const raw =
+          line.slice(5).trim();
+
+        if (
+          !raw ||
+          raw ===
+            "[DONE]"
+        ) {
+          continue;
+        }
+
+        try {
+          const parsed =
+            JSON.parse(
+              raw,
+            );
+
+          const parts =
+            parsed.candidates?.[0]
+              ?.content?.parts;
+
+          if (
+            !Array.isArray(
+              parts,
+            )
+          ) {
+            continue;
+          }
+
+          for (
+            const part of parts
+          ) {
+            if (
+              typeof part.text !==
+              "string" ||
+              !part.text
+            ) {
+              continue;
+            }
+
+            fullText +=
+              part.text;
+
+            onText(
+              part.text,
+            );
+          }
+        } catch {
+          // Ignore incomplete SSE JSON.
+          // The next chunk will contain the
+          // remainder once the event is complete.
+        }
+      }
+    };
+
+  try {
+    while (true) {
+      const {
+        done,
+        value,
+      } =
+        await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      buffer +=
+        decoder.decode(
+          value,
+          {
+            stream:
+              true,
+          },
+        );
+
+      const events =
+        buffer.split(
+          /\r?\n\r?\n/,
+        );
+
+      buffer =
+        events.pop() ||
+        "";
+
+      for (
+        const event of events
+      ) {
+        processEvent(
+          event,
+        );
+      }
+    }
+
+    buffer +=
+      decoder.decode();
+
+    if (buffer.trim()) {
+      processEvent(
+        buffer,
+      );
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return fullText.trim();
+}
+
+// ============================================================
+// STREAMING GEMINI REQUEST
+// ============================================================
+
+async function streamGeminiModel(
   apiKey: string,
+  model: string,
   history: CoachMsg[],
   newPrompt: string,
   systemContext: string,
-): Promise<{
-  text: string;
-  model: string;
-}> {
-  // Keep the existing conversational memory behaviour.
+  thinkingLevel: "low" | "medium",
+  onText: (
+    text: string,
+  ) => void,
+): Promise<string> {
   const recentHistory =
     history.slice(-10);
 
@@ -1139,14 +1378,236 @@ async function callGemini(
     contents,
 
     generationConfig: {
-      temperature: 0.7,
+      thinkingConfig: {
+        thinkingLevel,
+      },
     },
   };
 
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`;
+
+  const response =
+    await fetch(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+          "x-goog-api-key":
+            apiKey,
+        },
+        body: JSON.stringify(
+          payload,
+        ),
+      },
+    );
+
+  if (!response.ok) {
+    const errorData =
+      await response
+        .json()
+        .catch(
+          () => ({}),
+        );
+
+    const error =
+      new Error(
+        errorData.error
+          ?.message ||
+          `HTTP ${response.status} from ${model}`,
+      ) as Error & {
+        status?: number;
+      };
+
+    error.status =
+      response.status;
+
+    throw error;
+  }
+
+  return readGeminiStream(
+    response,
+    onText,
+  );
+}
+
+// ============================================================
+// CALL GEMINI
+// ============================================================
+//
+// Strategy:
+//
+// 1. Previously successful model first.
+// 2. Otherwise 3.8 -> 3.7 -> 3.6 -> 3.5 -> 3.5 Lite.
+// 3. If direct cascade can't find a usable model, use the
+//    cached model catalogue as a final fallback.
+//
+// This avoids model discovery on the normal path.
+//
+
+async function callGemini(
+  apiKey: string,
+  history: CoachMsg[],
+  newPrompt: string,
+  systemContext: string,
+  onText: (
+    text: string,
+  ) => void,
+): Promise<{
+  text: string;
+  model: string;
+}> {
+  const thinkingLevel =
+    getThinkingLevel(
+      newPrompt,
+    );
+
+  const unavailable =
+    unavailableModelCache.get(
+      apiKey,
+    ) ||
+    new Set<string>();
+
+  const cachedModel =
+    successfulModelCache.get(
+      apiKey,
+    );
+
+  const directModels =
+    Array.from(
+      new Set([
+        ...(cachedModel
+          ? [cachedModel]
+          : []),
+        ...PREFERRED_MODELS,
+      ]),
+    ).filter(
+      (model) =>
+        !unavailable.has(
+          model,
+        ),
+    );
+
+  let lastErrorMsg =
+    "Gemini request failed.";
+
+  for (
+    const model of directModels
+  ) {
+    try {
+      console.log(
+        `Gemini coach trying ${model} (${thinkingLevel} thinking)`,
+      );
+
+      const text =
+        await streamGeminiModel(
+          apiKey,
+          model,
+          history,
+          newPrompt,
+          systemContext,
+          thinkingLevel,
+          onText,
+        );
+
+      if (!text) {
+        throw new Error(
+          `Model ${model} returned an empty response.`,
+        );
+      }
+
+      successfulModelCache.set(
+        apiKey,
+        model,
+      );
+
+      console.log(
+        `Gemini coach success: ${model}`,
+      );
+
+      return {
+        text,
+        model,
+      };
+    } catch (error) {
+      const status =
+        typeof error ===
+        "object" &&
+        error !== null &&
+        "status" in error
+          ? Number(
+              (
+                error as {
+                  status?: number;
+                }
+              ).status,
+            )
+          : undefined;
+
+      lastErrorMsg =
+        error instanceof Error
+          ? error.message
+          : "Network error";
+
+      console.warn(
+        `Gemini model ${model} failed:`,
+        lastErrorMsg,
+      );
+
+      // Authentication/rate-limit/server errors should not
+      // cause a pointless cascade of requests.
+      if (
+        status === 401 ||
+        status === 429 ||
+        status === 500 ||
+        status === 502 ||
+        status === 503 ||
+        status === 504
+      ) {
+        throw error;
+      }
+
+      // Model unavailable / request incompatible:
+      // remember this for the current API key.
+      if (
+        status != null &&
+        shouldTryAnotherModel(
+          status,
+        )
+      ) {
+        unavailable.add(
+          model,
+        );
+
+        unavailableModelCache.set(
+          apiKey,
+          unavailable,
+        );
+
+        if (
+          successfulModelCache.get(
+            apiKey,
+          ) === model
+        ) {
+          successfulModelCache.delete(
+            apiKey,
+          );
+        }
+
+        continue;
+      }
+
+      // Unexpected errors should not hammer every model.
+      throw error;
+    }
+  }
+
   // ==========================================================
-  // SPEED CHANGE:
-  // This now normally returns immediately from the cache.
-  // Google model discovery only happens once per API key.
+  // FINAL FALLBACK:
+  // Ask Google's model catalogue which text models this key
+  // actually exposes.
   // ==========================================================
 
   const availableModels =
@@ -1154,166 +1615,92 @@ async function callGemini(
       apiKey,
     );
 
-  if (
-    availableModels.length ===
-    0
-  ) {
-    throw new Error(
-      "This Gemini API key has no available models that support generateContent.",
-    );
-  }
-
   const rankedModels =
     rankModels(
       availableModels,
+    ).filter(
+      (model) =>
+        !unavailable.has(
+          model,
+        ),
     );
-
-  console.log(
-    "Gemini coach fallback order:",
-    rankedModels,
-  );
 
   if (
     rankedModels.length ===
     0
   ) {
     throw new Error(
-      "This Gemini API key has no usable text-generation models available.",
+      `This Gemini API key has no usable text-generation models available. Last error: ${lastErrorMsg}`,
     );
   }
-
-  let lastErrorMsg =
-    "Gemini request failed.";
 
   for (
     const model of rankedModels
   ) {
     try {
       console.log(
-        `Trying Gemini model: ${model}`,
+        `Gemini discovered fallback: ${model}`,
       );
 
-      const url =
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent`;
-
-      const res =
-        await fetch(
-          url,
-          {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-              "x-goog-api-key":
-                apiKey,
-            },
-
-            body: JSON.stringify(
-              payload,
-            ),
-          },
+      const text =
+        await streamGeminiModel(
+          apiKey,
+          model,
+          history,
+          newPrompt,
+          systemContext,
+          thinkingLevel,
+          onText,
         );
 
-      const data =
-        await res
-          .json()
-          .catch(
-            () => ({}),
-          );
-
-      if (
-        res.ok
-      ) {
-        const text =
-          data.candidates?.[0]
-            ?.content?.parts
-            ?.map(
-              (part: any) =>
-                part.text ||
-                "",
-            )
-            .join("")
-            .trim() || "";
-
-        if (text) {
-          console.log(
-            `Gemini success using ${model}`,
-          );
-
-          return {
-            text,
-            model,
-          };
-        }
-
-        lastErrorMsg =
-          `Model ${model} returned an empty response.`;
-
-        console.warn(
-          lastErrorMsg,
-        );
-
+      if (!text) {
         continue;
       }
 
-      lastErrorMsg =
-        data.error?.message ||
-        `HTTP ${res.status} from ${model}`;
-
-      console.warn(
-        `Gemini model ${model} failed:`,
-        lastErrorMsg,
+      successfulModelCache.set(
+        apiKey,
+        model,
       );
 
-      // If a cached model has become unavailable,
-      // remove it from the cached discovery result.
-      if (
-        res.status === 404 ||
-        res.status === 400
-      ) {
-        const cachedPromise =
-          modelDiscoveryCache.get(
-            apiKey,
-          );
-
-        if (
-          cachedPromise
-        ) {
-          cachedPromise
-            .then(
+      return {
+        text,
+        model,
+      };
+    } catch (error) {
+      const status =
+        typeof error ===
+        "object" &&
+        error !== null &&
+        "status" in error
+          ? Number(
               (
-                cachedModels,
-              ) => {
-                modelDiscoveryCache.set(
-                  apiKey,
-                  Promise.resolve(
-                    cachedModels.filter(
-                      (
-                        m,
-                      ) =>
-                        m !==
-                        model,
-                    ),
-                  ),
-                );
-              },
+                error as {
+                  status?: number;
+                }
+              ).status,
             )
-            .catch(
-              () => {},
-            );
-        }
-      }
-    } catch (err) {
+          : undefined;
+
       lastErrorMsg =
-        err instanceof Error
-          ? err.message
+        error instanceof Error
+          ? error.message
           : "Network error";
 
       console.warn(
-        `Gemini model ${model} threw an error:`,
+        `Discovered Gemini model ${model} failed:`,
         lastErrorMsg,
       );
+
+      if (
+        status === 401 ||
+        status === 429 ||
+        status === 500 ||
+        status === 502 ||
+        status === 503 ||
+        status === 504
+      ) {
+        throw error;
+      }
     }
   }
 
@@ -1497,10 +1884,6 @@ export function CoachDrawer({
   // ==========================================================
   // ROUTINES
   // ==========================================================
-  //
-  // Memoised so rendering the drawer does not repeatedly parse
-  // and sort the Hevy history just to create the same buttons.
-  //
 
   const recentRoutines =
     useMemo(
@@ -1528,6 +1911,11 @@ export function CoachDrawer({
   ] = useState(false);
 
   const [
+    streamingText,
+    setStreamingText,
+  ] = useState("");
+
+  const [
     lastFailedPrompt,
     setLastFailedPrompt,
   ] =
@@ -1540,9 +1928,12 @@ export function CoachDrawer({
     setApiKey,
   ] = useState(
     () =>
-      localStorage.getItem(
-        "p35_gemini_api_key",
-      ) || "",
+      typeof window !==
+        "undefined"
+        ? localStorage.getItem(
+            "p35_gemini_api_key",
+          ) || ""
+        : "",
   );
 
   const [
@@ -1573,6 +1964,14 @@ export function CoachDrawer({
       null,
     );
 
+  const streamingBufferRef =
+    useRef("");
+
+  const streamingFrameRef =
+    useRef<number | null>(
+      null,
+    );
+
   // ============================================================
   // TEXTAREA RESIZE
   // ============================================================
@@ -1596,6 +1995,62 @@ export function CoachDrawer({
         120,
       )}px`;
   };
+
+  // ============================================================
+  // STREAMING UI UPDATE
+  // ============================================================
+  //
+  // Gemini can produce many small chunks.
+  // Don't cause a React render for every single chunk.
+  //
+  // Instead we batch updates to animation frames.
+  //
+
+  const pushStreamingText =
+    (
+      chunk: string,
+    ) => {
+      streamingBufferRef.current +=
+        chunk;
+
+      if (
+        streamingFrameRef.current !==
+        null
+      ) {
+        return;
+      }
+
+      streamingFrameRef.current =
+        requestAnimationFrame(
+          () => {
+            streamingFrameRef.current =
+              null;
+
+            setStreamingText(
+              streamingBufferRef.current,
+            );
+          },
+        );
+    };
+
+  const flushStreamingText =
+    () => {
+      if (
+        streamingFrameRef.current !==
+        null
+      ) {
+        cancelAnimationFrame(
+          streamingFrameRef.current,
+        );
+
+        streamingFrameRef.current =
+          null;
+      }
+
+      setStreamingText(
+        streamingBufferRef.current,
+      );
+    };
 
   // ============================================================
   // AUTO-SCROLL
@@ -1625,9 +2080,7 @@ export function CoachDrawer({
 
   useEffect(() => {
     if (
-      typeof document ===
-        "undefined" ||
-      !document.body ||
+      !open ||
       !endRef.current
     ) {
       return;
@@ -1636,13 +2089,30 @@ export function CoachDrawer({
     endRef.current.scrollIntoView(
       {
         behavior:
-          "smooth",
+          "auto",
       },
     );
   }, [
-    messages,
+    streamingText,
     loading,
   ]);
+
+  // ============================================================
+  // CLEANUP STREAMING FRAME
+  // ============================================================
+
+  useEffect(() => {
+    return () => {
+      if (
+        streamingFrameRef.current !==
+        null
+      ) {
+        cancelAnimationFrame(
+          streamingFrameRef.current,
+        );
+      }
+    };
+  }, []);
 
   // ============================================================
   // SAVE GEMINI KEY
@@ -1652,12 +2122,39 @@ export function CoachDrawer({
     key: string,
   ) => {
     const clean =
-      key.trim();
+      key
+        .trim()
+        .replace(
+          /\s+/g,
+          "",
+        );
 
-    localStorage.setItem(
-      "p35_gemini_api_key",
-      clean,
-    );
+    if (
+      typeof window !==
+      "undefined"
+    ) {
+      localStorage.setItem(
+        "p35_gemini_api_key",
+        clean,
+      );
+    }
+
+    // New key = new model selection.
+    // Old key's cache remains harmlessly in memory.
+    if (
+      clean !==
+      apiKey
+    ) {
+      successfulModelCache.delete(
+        clean,
+      );
+      modelDiscoveryCache.delete(
+        clean,
+      );
+      unavailableModelCache.delete(
+        clean,
+      );
+    }
 
     setApiKey(
       clean,
@@ -1670,10 +2167,6 @@ export function CoachDrawer({
     setKeyDialogOpen(
       false,
     );
-
-    // IMPORTANT:
-    // If the API key changes, its model cache is naturally
-    // separated because the cache is keyed by API key.
 
     toast.success(
       clean
@@ -1700,9 +2193,12 @@ export function CoachDrawer({
     }
 
     const currentKey =
-      localStorage.getItem(
-        "p35_gemini_api_key",
-      ) || "";
+      typeof window !==
+      "undefined"
+        ? localStorage.getItem(
+            "p35_gemini_api_key",
+          ) || ""
+        : "";
 
     const cleanKey =
       currentKey.replace(
@@ -1722,8 +2218,6 @@ export function CoachDrawer({
       return;
     }
 
-    // Keep state synchronised in case the key was changed
-    // elsewhere in localStorage.
     if (
       cleanKey !==
       apiKey
@@ -1746,23 +2240,30 @@ export function CoachDrawer({
       true,
     );
 
+    setStreamingText(
+      "",
+    );
+
+    streamingBufferRef.current =
+      "";
+
     setLastFailedPrompt(
       null,
     );
 
     try {
-      // Snapshot the current conversation before adding the
-      // new message. callGemini() adds the new prompt itself.
+      // Snapshot the conversation before adding the new user
+      // message. Gemini receives the snapshot + the new prompt.
       const currentHistory =
         [...messages];
 
-      // Build the context once for this request.
       const context =
         buildContext(
           workout,
           entries,
         );
 
+      // Persist the user's message.
       await add.mutateAsync(
         {
           role: "user",
@@ -1780,12 +2281,18 @@ export function CoachDrawer({
           currentHistory,
           trimmed,
           context,
+          pushStreamingText,
         );
+
+      flushStreamingText();
 
       setActiveModel(
         model,
       );
 
+      // Save the completed assistant response only after the
+      // stream has finished. This prevents partial messages
+      // being stored.
       await add.mutateAsync(
         {
           role:
@@ -1794,7 +2301,16 @@ export function CoachDrawer({
             reply,
         },
       );
+
+      setStreamingText(
+        "",
+      );
+
+      streamingBufferRef.current =
+        "";
     } catch (error) {
+      flushStreamingText();
+
       const errorMessage =
         error instanceof
         Error
@@ -1813,6 +2329,14 @@ export function CoachDrawer({
       setLastFailedPrompt(
         trimmed,
       );
+
+      // Don't leave a failed partial response on screen.
+      setStreamingText(
+        "",
+      );
+
+      streamingBufferRef.current =
+        "";
     } finally {
       setLoading(
         false,
@@ -1945,15 +2469,43 @@ export function CoachDrawer({
             )}
 
             {/* ==================================================
+                LIVE STREAMING RESPONSE
+            ================================================== */}
+
+            {streamingText && (
+              <div className="space-y-1">
+                <div className="mr-auto max-w-[90%] rounded-2xl rounded-bl-sm border border-border bg-surface-2/70 px-4 py-2.5 text-sm">
+                  <CoachText
+                    text={
+                      streamingText
+                    }
+                  />
+                </div>
+
+                {activeModel && (
+                  <div className="flex items-center gap-1 pl-2 text-[10px] text-muted-foreground/60">
+                    <Cpu className="size-2.5" />
+                    <span>
+                      {
+                        activeModel
+                      }
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ==================================================
                 THINKING INDICATOR
             ================================================== */}
 
-            {loading && (
-              <div className="mr-auto flex items-center gap-2 rounded-2xl border border-border bg-surface-2/70 px-4 py-2.5 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-                Thinking...
-              </div>
-            )}
+            {loading &&
+              !streamingText && (
+                <div className="mr-auto flex items-center gap-2 rounded-2xl border border-border bg-surface-2/70 px-4 py-2.5 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  Thinking...
+                </div>
+              )}
 
             {/* ==================================================
                 RETRY
