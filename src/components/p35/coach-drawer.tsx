@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,7 +38,6 @@ import {
   Send,
   Sparkles,
   Cpu,
-  Notebook,
 } from "lucide-react";
 import { toast } from "sonner";
 import { APP_NAME, IS_PROJECT_35 } from "@/lib/config";
@@ -50,16 +49,24 @@ type Msg = CoachMsg;
 // ============================================================
 // AI COACH SYSTEM INSTRUCTIONS
 // ============================================================
+
 const SYSTEM_INSTRUCTIONS = `You are the ${APP_NAME} performance coach: direct, knowledgeable, conversational, and technically sharp.
 
 CONTEXT & TONE:
 - Your name is ${COACH_NAME}.
-- You are my coach. You can call me ${IS_PROJECT_35 ? "Ryan, Chief, Boss or mate" : "Gay Cunt, Chief, Boss or mate"} but only if it really calls for it, " Gay cunt"  is specifically if I am moaning. In general conversation refrain from using a name; keep it precise and to the point and only use names if it explicitly needs it.
+- You are my coach. You can call me ${
+  IS_PROJECT_35 ? "Ryan, Chief, Boss or mate" : "Gay Cunt, Chief, Boss or mate"
+} but only if it really calls for it, " Gay cunt" is specifically if I am moaning. In general conversation refrain from using a name; keep it precise and to the point and only use names if it explicitly needs it.
 
 - You are an expert strength and conditioning partner helping the athlete progress across their current macrocycle toward the long-term target supplied in the athlete data below.
 - Match the user's intent. If they greet you ("hey", "hello"), respond naturally and ask what they want to tackle today.
 - If they ask general questions about exercise swaps, pain management, recovery, upcoming phases, or pacing, provide direct, intelligent advice grounded in their current block targets without forcing rigid templates.
 - Strictly respect the exact unit logged by the user for lifts (whether lbs or kg) and pounds for bodyweight. Never convert or translate their logged weight units. Keep responses crisp and actionable.
+
+RESPONSE LENGTH:
+- Keep normal answers concise and direct.
+- Do not repeat information already present in the athlete context.
+- Only give detailed responses when the user explicitly asks for detail or when a workout analysis requires it.
 
 WORKOUT ANALYSIS MODE:
 Trigger this specific structured format ONLY when the user explicitly asks to analyse, review, or evaluate a workout/session:
@@ -120,9 +127,11 @@ WORKOUT HISTORY RULES:
 // PREFERRED GEMINI MODELS
 // ============================================================
 //
-// These are ranked preferences only.
-// The API is ALWAYS asked what models the current API key
-// actually has access to before any model is attempted.
+// The model catalogue is discovered ONCE per API key and then
+// cached for the lifetime of this page session.
+//
+// This removes a full Google model-list request from every
+// single coach message.
 //
 
 const PREFERRED_MODELS = [
@@ -138,6 +147,32 @@ const PREFERRED_MODELS = [
   "gemini-1.5-flash",
   "gemini-1.5-pro",
 ];
+
+// ============================================================
+// GEMINI MODEL CACHE
+// ============================================================
+//
+// Cache is keyed by API key so changing the key automatically
+// causes a fresh discovery.
+//
+// We cache the PROMISE too, which prevents multiple simultaneous
+// requests from triggering duplicate model discovery calls.
+//
+
+const modelDiscoveryCache =
+  new Map<string, Promise<string[]>>();
+
+// ============================================================
+// HEVY HISTORY CACHE
+// ============================================================
+//
+// localStorage parsing is cached against the raw stored string.
+// If Hevy changes the stored data, the raw string changes and
+// the cache automatically refreshes.
+//
+
+let hevyHistoryRawCache: string | null = null;
+let hevyHistoryParsedCache: StoredHevyWorkout[] = [];
 
 // ============================================================
 // CARDIO DETECTION
@@ -237,7 +272,7 @@ function formatCardio(s: any): string {
 function formatWeight(
   s: any,
   exerciseTitle: string,
-) {
+): string {
   const rawWeight =
     s.weightLbs ??
     s.weight_lbs ??
@@ -250,9 +285,9 @@ function formatWeight(
 
   const titleLower = exerciseTitle.toLowerCase();
 
-  // FIX: Explicitly exclude lat pulldown from the cable conversion
   const isCableOrLbs =
-    (titleLower.includes("cable") && !titleLower.includes("lat pulldown")) ||
+    (titleLower.includes("cable") &&
+      !titleLower.includes("lat pulldown")) ||
     titleLower.includes("pushdown") ||
     titleLower.includes("fly");
 
@@ -261,7 +296,8 @@ function formatWeight(
     s.weight_lbs != null
   ) {
     const val =
-      s.weightLbs ?? s.weight_lbs;
+      s.weightLbs ??
+      s.weight_lbs;
 
     const snapped =
       Math.round(val * 2) / 2;
@@ -288,53 +324,118 @@ function formatWeight(
 }
 
 // ============================================================
-// STORED HEVY HISTORY (Ascension context)
+// STORED HEVY HISTORY
 // ============================================================
 
-type StoredHevyWorkout = HevyWorkout & { id?: string };
+type StoredHevyWorkout = HevyWorkout & {
+  id?: string;
+};
 
-function hashString(input: string): string {
+function hashString(
+  input: string,
+): string {
   let hash = 2166136261;
 
-  for (let i = 0; i < input.length; i++) {
+  for (
+    let i = 0;
+    i < input.length;
+    i++
+  ) {
     hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
+    hash = Math.imul(
+      hash,
+      16777619,
+    );
   }
 
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return (
+    hash >>> 0
+  )
+    .toString(16)
+    .padStart(8, "0");
 }
 
-function getWorkoutId(workout: HevyWorkout): string {
-  const fingerprint = JSON.stringify({
-    title: workout.title?.trim().toLowerCase() ?? "",
-    startTime: workout.startTime ?? "",
-    exercises: workout.exercises.map((ex) => ({
-      title: ex.title?.trim().toLowerCase() ?? "",
-      notes: ex.notes ?? "",
-      sets: ex.sets.map((s: any) => ({
-        weightKg: s.weightKg ?? s.weight_kg ?? null,
-        weightLbs: s.weightLbs ?? s.weight_lbs ?? null,
-        reps: s.reps ?? null,
-        rpe: s.rpe ?? null,
-        distance_meters: s.distance_meters ?? s.distanceMeters ?? null,
-        duration_seconds: s.duration_seconds ?? s.durationSeconds ?? null,
-      })),
-    })),
-  });
+function getWorkoutId(
+  workout: HevyWorkout,
+): string {
+  const fingerprint =
+    JSON.stringify({
+      title:
+        workout.title
+          ?.trim()
+          .toLowerCase() ?? "",
+      startTime:
+        workout.startTime ?? "",
+      exercises:
+        workout.exercises.map(
+          (ex) => ({
+            title:
+              ex.title
+                ?.trim()
+                .toLowerCase() ?? "",
+            notes:
+              ex.notes ?? "",
+            sets:
+              ex.sets.map(
+                (s: any) => ({
+                  weightKg:
+                    s.weightKg ??
+                    s.weight_kg ??
+                    null,
+                  weightLbs:
+                    s.weightLbs ??
+                    s.weight_lbs ??
+                    null,
+                  reps:
+                    s.reps ??
+                    null,
+                  rpe:
+                    s.rpe ??
+                    null,
+                  distance_meters:
+                    s.distance_meters ??
+                    s.distanceMeters ??
+                    null,
+                  duration_seconds:
+                    s.duration_seconds ??
+                    s.durationSeconds ??
+                    null,
+                }),
+              ),
+          }),
+        ),
+    });
 
-  return `hevy_${hashString(fingerprint)}`;
+  return `hevy_${hashString(
+    fingerprint,
+  )}`;
 }
 
-function parseWorkoutDate(rawDate: string | null | undefined): number {
+function parseWorkoutDate(
+  rawDate:
+    | string
+    | null
+    | undefined,
+): number {
   if (!rawDate) return 0;
 
-  const value = rawDate.trim();
-  const ukMatch = value.match(
-    /^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/,
-  );
+  const value =
+    rawDate.trim();
+
+  const ukMatch =
+    value.match(
+      /^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/,
+    );
 
   if (ukMatch) {
-    const [, day, month, year, hour = "0", minute = "0"] = ukMatch;
+    const [
+      ,
+      day,
+      month,
+      year,
+      hour = "0",
+      minute = "0",
+    ] = ukMatch;
 
     return new Date(
       Number(year),
@@ -345,103 +446,265 @@ function parseWorkoutDate(rawDate: string | null | undefined): number {
     ).getTime();
   }
 
-  const native = new Date(value);
+  const native =
+    new Date(value);
 
-  return Number.isNaN(native.getTime()) ? 0 : native.getTime();
+  return Number.isNaN(
+    native.getTime(),
+  )
+    ? 0
+    : native.getTime();
 }
 
+// ============================================================
+// FAST CACHED HISTORY READER
+// ============================================================
+
 function getStoredHevyHistory(): StoredHevyWorkout[] {
-  if (typeof window === "undefined") return [];
+  if (
+    typeof window ===
+    "undefined"
+  ) {
+    return [];
+  }
 
   try {
-    const raw = localStorage.getItem("p35_hevy_workouts");
-    if (!raw) return [];
+    const raw =
+      localStorage.getItem(
+        "p35_hevy_workouts",
+      );
 
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    if (!raw) {
+      hevyHistoryRawCache = null;
+      hevyHistoryParsedCache = [];
+      return [];
+    }
 
-    return parsed.filter(
-      (item): item is StoredHevyWorkout =>
-        !!item &&
-        typeof item === "object" &&
-        typeof (item as StoredHevyWorkout).title === "string" &&
-        Array.isArray((item as StoredHevyWorkout).exercises),
-    );
+    if (
+      raw ===
+      hevyHistoryRawCache
+    ) {
+      return hevyHistoryParsedCache;
+    }
+
+    const parsed: unknown =
+      JSON.parse(raw);
+
+    if (
+      !Array.isArray(
+        parsed,
+      )
+    ) {
+      hevyHistoryRawCache =
+        raw;
+      hevyHistoryParsedCache =
+        [];
+      return [];
+    }
+
+    const filtered =
+      parsed.filter(
+        (
+          item,
+        ): item is StoredHevyWorkout =>
+          !!item &&
+          typeof item ===
+            "object" &&
+          typeof (
+            item as StoredHevyWorkout
+          ).title ===
+            "string" &&
+          Array.isArray(
+            (
+              item as StoredHevyWorkout
+            ).exercises,
+          ),
+      );
+
+    hevyHistoryRawCache =
+      raw;
+
+    hevyHistoryParsedCache =
+      filtered;
+
+    return filtered;
   } catch {
     return [];
   }
 }
 
-function describeExercise(ex: HevyWorkout["exercises"][number]): string {
-  if (isCardioExercise(ex.title, ex.sets)) {
-    const cardioSummary = ex.sets
-      .map((s: any) => formatCardio(s))
-      .join(", ");
-    const notes = ex.notes ? ` | Notes: "${ex.notes}"` : "";
+// ============================================================
+// EXERCISE DESCRIPTION
+// ============================================================
+
+function describeExercise(
+  ex: HevyWorkout["exercises"][number],
+): string {
+  if (
+    isCardioExercise(
+      ex.title,
+      ex.sets,
+    )
+  ) {
+    const cardioSummary =
+      ex.sets
+        .map((s: any) =>
+          formatCardio(s),
+        )
+        .join(", ");
+
+    const notes =
+      ex.notes
+        ? ` | Notes: "${ex.notes}"`
+        : "";
 
     return `- ${ex.title} (Cardio/Conditioning): ${cardioSummary}${notes}`;
   }
 
-  const setStr = ex.sets
-    .map((s: any) => {
-      const weightDisplay = formatWeight(s, ex.title);
-      const rpe = s.rpe != null ? ` @RPE${s.rpe}` : "";
+  const setStr =
+    ex.sets
+      .map((s: any) => {
+        const weightDisplay =
+          formatWeight(
+            s,
+            ex.title,
+          );
 
-      return `${weightDisplay} x ${s.reps ?? "?"}${rpe}`;
-    })
-    .join(", ");
+        const rpe =
+          s.rpe != null
+            ? ` @RPE${s.rpe}`
+            : "";
 
-  const lastSet = ex.sets[ex.sets.length - 1];
+        return `${weightDisplay} x ${
+          s.reps ?? "?"
+        }${rpe}`;
+      })
+      .join(", ");
+
+  const lastSet =
+    ex.sets[
+      ex.sets.length - 1
+    ];
+
   const rpeStr =
-    lastSet?.rpe != null ? ` | Final set RPE: ${lastSet.rpe}` : "";
-  const notesStr = ex.notes ? ` | Notes: "${ex.notes}"` : "";
-  const setNotesStr = lastSet?.notes
-    ? ` | Set notes: "${lastSet.notes}"`
-    : "";
+    lastSet?.rpe != null
+      ? ` | Final set RPE: ${lastSet.rpe}`
+      : "";
+
+  const notesStr =
+    ex.notes
+      ? ` | Notes: "${ex.notes}"`
+      : "";
+
+  const setNotesStr =
+    lastSet?.notes
+      ? ` | Set notes: "${lastSet.notes}"`
+      : "";
 
   return `- ${ex.title}: ${setStr}${rpeStr}${notesStr}${setNotesStr}`;
 }
 
-function buildHistoryLines(workout: HevyWorkout | null): string[] {
-  const sortedHistory = getStoredHevyHistory()
-    .map((item) => ({ ...item, id: item.id ?? getWorkoutId(item) }))
-    .sort(
-      (a, b) => parseWorkoutDate(a.startTime) - parseWorkoutDate(b.startTime),
-    );
+// ============================================================
+// BUILD HISTORY CONTEXT
+// ============================================================
 
-  let currentWorkoutId: string | null = null;
+function buildHistoryLines(
+  workout: HevyWorkout | null,
+): string[] {
+  const storedHistory =
+    getStoredHevyHistory();
+
+  const sortedHistory =
+    storedHistory
+      .map((item) => ({
+        ...item,
+        id:
+          item.id ??
+          getWorkoutId(item),
+      }))
+      .sort(
+        (a, b) =>
+          parseWorkoutDate(
+            a.startTime,
+          ) -
+          parseWorkoutDate(
+            b.startTime,
+          ),
+      );
+
+  let currentWorkoutId:
+    | string
+    | null = null;
 
   if (workout) {
-    currentWorkoutId = getWorkoutId(workout);
+    currentWorkoutId =
+      getWorkoutId(
+        workout,
+      );
 
-    if (!sortedHistory.some((item) => item.id === currentWorkoutId)) {
-      sortedHistory.push({ ...workout, id: currentWorkoutId });
+    if (
+      !sortedHistory.some(
+        (item) =>
+          item.id ===
+          currentWorkoutId,
+      )
+    ) {
+      sortedHistory.push({
+        ...workout,
+        id: currentWorkoutId,
+      });
     }
   }
 
-  const recentHistory = sortedHistory.slice(-10);
+  const recentHistory =
+    sortedHistory.slice(-10);
+
   const lines: string[] = [
     "",
     `HEVY WORKOUT HISTORY: ${recentHistory.length} stored session(s).`,
   ];
 
-  if (recentHistory.length === 0) {
-    lines.push("No Hevy workout history stored yet.");
-  }
-
-  for (const historyWorkout of recentHistory) {
-    const id = historyWorkout.id ?? getWorkoutId(historyWorkout);
-
+  if (
+    recentHistory.length ===
+    0
+  ) {
     lines.push(
-      "",
-      `${currentWorkoutId === id ? "CURRENT WORKOUT" : "HISTORICAL WORKOUT"} — ID: ${id}`,
-      `Title: "${historyWorkout.title}"`,
-      `Date/time: ${historyWorkout.startTime ?? "unknown"}`,
-      ...historyWorkout.exercises.map(describeExercise),
+      "No Hevy workout history stored yet.",
     );
   }
 
-  if (workout && currentWorkoutId) {
+  for (
+    const historyWorkout of recentHistory
+  ) {
+    const id =
+      historyWorkout.id ??
+      getWorkoutId(
+        historyWorkout,
+      );
+
+    lines.push(
+      "",
+      `${
+        currentWorkoutId ===
+        id
+          ? "CURRENT WORKOUT"
+          : "HISTORICAL WORKOUT"
+      } — ID: ${id}`,
+      `Title: "${historyWorkout.title}"`,
+      `Date/time: ${
+        historyWorkout.startTime ??
+        "unknown"
+      }`,
+      ...historyWorkout.exercises.map(
+        describeExercise,
+      ),
+    );
+  }
+
+  if (
+    workout &&
+    currentWorkoutId
+  ) {
     lines.push(
       "",
       `IMPORTANT: The CURRENT WORKOUT for this request is ID ${currentWorkoutId}.`,
@@ -459,18 +722,32 @@ function buildHistoryLines(workout: HevyWorkout | null): string[] {
 function buildContext(
   workout: HevyWorkout | null,
   entries: WeightEntry[],
-) {
-  const block = getActiveBlockCountdown();
+): string {
+  const block =
+    getActiveBlockCountdown();
 
-  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const sorted =
+    [...entries].sort(
+      (a, b) =>
+        a.date.localeCompare(
+          b.date,
+        ),
+    );
 
   const trend =
     sorted
       .slice(-6)
-      .map((e) => `${e.date}: ${e.weight} lb`)
-      .join(", ") || "no weigh-ins logged yet";
+      .map(
+        (e) =>
+          `${e.date}: ${e.weight} lb`,
+      )
+      .join(", ") ||
+    "no weigh-ins logged yet";
 
-  const latest = sorted[sorted.length - 1]?.weight;
+  const latest =
+    sorted[
+      sorted.length - 1
+    ]?.weight;
 
   const lines = [
     `CURRENT BLOCK: ${block.phaseTitle} • ${block.blockName} (Week ${block.currentWeek} of ${block.totalWeeks})`,
@@ -480,41 +757,85 @@ function buildContext(
     `Long-Term ${getLongTermTarget()}`,
   ];
 
-  // Provide full session history regardless of project build
-  const history = buildHistoryLines(workout);
-  if (history.length > 2) {
-    lines.push(...history);
+  const history =
+    buildHistoryLines(
+      workout,
+    );
+
+  if (
+    history.length > 2
+  ) {
+    lines.push(
+      ...history,
+    );
   } else if (workout) {
     lines.push(
-      `LATEST WORKOUT LOGGED IN HEVY: "${workout.title}" on ${workout.startTime ?? "recent"}.`,
-      ...workout.exercises.map(describeExercise),
+      `LATEST WORKOUT LOGGED IN HEVY: "${workout.title}" on ${
+        workout.startTime ??
+        "recent"
+      }.`,
+      ...workout.exercises.map(
+        describeExercise,
+      ),
     );
   } else {
-    lines.push("No Hevy workout synced yet.");
+    lines.push(
+      "No Hevy workout synced yet.",
+    );
   }
 
-  return lines.join("\n");
+  return lines.join(
+    "\n",
+  );
 }
 
 // ============================================================
-// EXTRACT RECENT UNIQUE SPLITS
+// RECENT UNIQUE ROUTINES
 // ============================================================
 
 function getRecentRoutines(): string[] {
-  const history = getStoredHevyHistory();
-  if (!history || history.length === 0) return [];
+  const history =
+    getStoredHevyHistory();
 
-  // Sort newest first
-  const sorted = [...history].sort(
-    (a, b) => parseWorkoutDate(b.startTime) - parseWorkoutDate(a.startTime),
-  );
+  if (
+    history.length ===
+    0
+  ) {
+    return [];
+  }
 
-  // Look across recent sessions and deduplicate routine titles
-  const titles: string[] = [];
-  for (const session of sorted.slice(0, 10)) {
-    const rawTitle = session.title?.trim();
-    if (rawTitle && !titles.includes(rawTitle)) {
-      titles.push(rawTitle);
+  const sorted =
+    [...history].sort(
+      (a, b) =>
+        parseWorkoutDate(
+          b.startTime,
+        ) -
+        parseWorkoutDate(
+          a.startTime,
+        ),
+    );
+
+  const titles: string[] =
+    [];
+
+  for (
+    const session of sorted.slice(
+      0,
+      10,
+    )
+  ) {
+    const rawTitle =
+      session.title?.trim();
+
+    if (
+      rawTitle &&
+      !titles.includes(
+        rawTitle,
+      )
+    ) {
+      titles.push(
+        rawTitle,
+      );
     }
   }
 
@@ -524,6 +845,11 @@ function getRecentRoutines(): string[] {
 // ============================================================
 // DISCOVER AVAILABLE GEMINI MODELS
 // ============================================================
+//
+// IMPORTANT SPEED CHANGE:
+// This function is no longer called directly for every message.
+// getCachedAvailableModels() below caches the result per API key.
+//
 
 async function getAvailableModels(
   apiKey: string,
@@ -534,13 +860,15 @@ async function getAvailableModels(
     supportedGenerationMethods?: string[];
   }[] = [];
 
-  let pageToken = "";
+  let pageToken =
+    "";
 
   do {
-    const query = new URLSearchParams({
-      key: apiKey,
-      pageSize: "1000",
-    });
+    const query =
+      new URLSearchParams({
+        key: apiKey,
+        pageSize: "1000",
+      });
 
     if (pageToken) {
       query.set(
@@ -552,25 +880,31 @@ async function getAvailableModels(
     const listUrl =
       `https://generativelanguage.googleapis.com/v1beta/models?${query.toString()}`;
 
-    const listRes = await fetch(
-      listUrl,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type":
-            "application/json",
+    const listRes =
+      await fetch(
+        listUrl,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
         },
-      },
-    );
+      );
 
     const listData =
       await listRes
         .json()
-        .catch(() => ({}));
+        .catch(
+          () => ({}),
+        );
 
-    if (!listRes.ok) {
+    if (
+      !listRes.ok
+    ) {
       throw new Error(
-        listData.error?.message ||
+        listData.error
+          ?.message ||
           `Unable to list Gemini models (HTTP ${listRes.status}).`,
       );
     }
@@ -586,8 +920,11 @@ async function getAvailableModels(
     }
 
     pageToken =
-      listData.nextPageToken || "";
-  } while (pageToken);
+      listData.nextPageToken ||
+      "";
+  } while (
+    pageToken
+  );
 
   const modelIds =
     availableModels
@@ -597,13 +934,16 @@ async function getAvailableModels(
             model.supportedGenerationMethods,
           ),
       )
-      .filter((model) =>
-        model.supportedGenerationMethods!.includes(
-          "generateContent",
-        ),
+      .filter(
+        (model) =>
+          model.supportedGenerationMethods!.includes(
+            "generateContent",
+          ),
       )
       .map((model) => {
-        if (model.baseModelId) {
+        if (
+          model.baseModelId
+        ) {
           return model.baseModelId;
         }
 
@@ -619,22 +959,74 @@ async function getAvailableModels(
       .filter(Boolean);
 
   return Array.from(
-    new Set(modelIds),
+    new Set(
+      modelIds,
+    ),
   );
+}
+
+// ============================================================
+// CACHED MODEL DISCOVERY
+// ============================================================
+
+function getCachedAvailableModels(
+  apiKey: string,
+): Promise<string[]> {
+  const cached =
+    modelDiscoveryCache.get(
+      apiKey,
+    );
+
+  if (cached) {
+    return cached;
+  }
+
+  console.log(
+    "Discovering Gemini models for this API key...",
+  );
+
+  const promise =
+    getAvailableModels(
+      apiKey,
+    )
+      .then(
+        (models) => {
+          console.log(
+            "Gemini models supporting generateContent:",
+            models,
+          );
+
+          return models;
+        },
+      )
+      .catch(
+        (error) => {
+          // Do not permanently cache a failed discovery.
+          modelDiscoveryCache.delete(
+            apiKey,
+          );
+
+          throw error;
+        },
+      );
+
+  modelDiscoveryCache.set(
+    apiKey,
+    promise,
+  );
+
+  return promise;
 }
 
 // ============================================================
 // FILTER TO TEXT CHAT MODELS
 // ============================================================
-//
-// Some APIs can expose models which technically support
-// generateContent but are not appropriate for this text coach.
-//
 
 function isUsableCoachModel(
   model: string,
 ): boolean {
-  const lower = model.toLowerCase();
+  const lower =
+    model.toLowerCase();
 
   const excludedPatterns = [
     "embedding",
@@ -649,7 +1041,9 @@ function isUsableCoachModel(
 
   return !excludedPatterns.some(
     (pattern) =>
-      lower.includes(pattern),
+      lower.includes(
+        pattern,
+      ),
   );
 }
 
@@ -668,7 +1062,9 @@ function rankModels(
   const preferred =
     PREFERRED_MODELS.filter(
       (model) =>
-        usableModels.includes(model),
+        usableModels.includes(
+          model,
+        ),
     );
 
   const otherModels =
@@ -698,6 +1094,7 @@ async function callGemini(
   text: string;
   model: string;
 }> {
+  // Keep the existing conversational memory behaviour.
   const recentHistory =
     history.slice(-10);
 
@@ -705,7 +1102,8 @@ async function callGemini(
     ...recentHistory.map(
       (m) => ({
         role:
-          m.role === "assistant"
+          m.role ===
+          "assistant"
             ? "model"
             : "user",
         parts: [
@@ -745,22 +1143,20 @@ async function callGemini(
     },
   };
 
-  console.log(
-    "Discovering Gemini models available to API key...",
-  );
+  // ==========================================================
+  // SPEED CHANGE:
+  // This now normally returns immediately from the cache.
+  // Google model discovery only happens once per API key.
+  // ==========================================================
 
   const availableModels =
-    await getAvailableModels(
+    await getCachedAvailableModels(
       apiKey,
     );
 
-  console.log(
-    "Gemini models supporting generateContent:",
-    availableModels,
-  );
-
   if (
-    availableModels.length === 0
+    availableModels.length ===
+    0
   ) {
     throw new Error(
       "This Gemini API key has no available models that support generateContent.",
@@ -778,7 +1174,8 @@ async function callGemini(
   );
 
   if (
-    rankedModels.length === 0
+    rankedModels.length ===
+    0
   ) {
     throw new Error(
       "This Gemini API key has no usable text-generation models available.",
@@ -788,7 +1185,9 @@ async function callGemini(
   let lastErrorMsg =
     "Gemini request failed.";
 
-  for (const model of rankedModels) {
+  for (
+    const model of rankedModels
+  ) {
     try {
       console.log(
         `Trying Gemini model: ${model}`,
@@ -797,34 +1196,42 @@ async function callGemini(
       const url =
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-      const res = await fetch(
-        url,
-        {
-          method: "POST",
+      const res =
+        await fetch(
+          url,
+          {
+            method: "POST",
 
-          headers: {
-            "Content-Type":
-              "application/json",
-            "x-goog-api-key": apiKey,
+            headers: {
+              "Content-Type":
+                "application/json",
+              "x-goog-api-key":
+                apiKey,
+            },
+
+            body: JSON.stringify(
+              payload,
+            ),
           },
-
-          body: JSON.stringify(
-            payload,
-          ),
-        },
-      );
+        );
 
       const data =
         await res
           .json()
-          .catch(() => ({}));
+          .catch(
+            () => ({}),
+          );
 
-      if (res.ok) {
+      if (
+        res.ok
+      ) {
         const text =
-          data.candidates?.[0]?.content?.parts
+          data.candidates?.[0]
+            ?.content?.parts
             ?.map(
               (part: any) =>
-                part.text || "",
+                part.text ||
+                "",
             )
             .join("")
             .trim() || "";
@@ -858,6 +1265,45 @@ async function callGemini(
         `Gemini model ${model} failed:`,
         lastErrorMsg,
       );
+
+      // If a cached model has become unavailable,
+      // remove it from the cached discovery result.
+      if (
+        res.status === 404 ||
+        res.status === 400
+      ) {
+        const cachedPromise =
+          modelDiscoveryCache.get(
+            apiKey,
+          );
+
+        if (
+          cachedPromise
+        ) {
+          cachedPromise
+            .then(
+              (
+                cachedModels,
+              ) => {
+                modelDiscoveryCache.set(
+                  apiKey,
+                  Promise.resolve(
+                    cachedModels.filter(
+                      (
+                        m,
+                      ) =>
+                        m !==
+                        model,
+                    ),
+                  ),
+                );
+              },
+            )
+            .catch(
+              () => {},
+            );
+        }
+      }
     } catch (err) {
       lastErrorMsg =
         err instanceof Error
@@ -879,49 +1325,55 @@ async function callGemini(
 // ============================================================
 // FORMATTED AI MESSAGE
 // ============================================================
-//
-// This is deliberately based on the richer formatter from
-// your working onboarding screen rather than the simpler
-// CoachText version you currently have.
-//
 
 function CoachText({
   text,
 }: {
   text: string;
 }) {
-  const cleanedText = text
-    .replace(/---/g, "")
-    .replace(
-      /([.!?])\s+(\*\*\d+\.)/g,
-      "$1\n\n$2",
-    )
-    .replace(
-      /\s+\*\s+(\*\*)/g,
-      "\n\n• $1",
-    )
-    .replace(
-      /\s+-\s+(\*\*)/g,
-      "\n\n• $1",
-    );
+  const cleanedText =
+    text
+      .replace(
+        /---/g,
+        "",
+      )
+      .replace(
+        /([.!?])\s+(\*\*\d+\.)/g,
+        "$1\n\n$2",
+      )
+      .replace(
+        /\s+\*\s+(\*\*)/g,
+        "\n\n• $1",
+      )
+      .replace(
+        /\s+-\s+(\*\*)/g,
+        "\n\n• $1",
+      );
 
-  const lines = cleanedText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const lines =
+    cleanedText
+      .split(/\r?\n/)
+      .map((line) =>
+        line.trim(),
+      )
+      .filter(Boolean);
 
   return (
     <div className="space-y-2 text-sm leading-relaxed">
       {lines.map(
-        (line, idx) => {
-          const subItems = line
-            .split(
-              /(?=\*\*\d+\.)|\s+\*\s+(?=\*\*)/,
-            )
-            .map((s) =>
-              s.trim(),
-            )
-            .filter(Boolean);
+        (
+          line,
+          idx,
+        ) => {
+          const subItems =
+            line
+              .split(
+                /(?=\*\*\d+\.)|\s+\*\s+(?=\*\*)/,
+              )
+              .map((s) =>
+                s.trim(),
+              )
+              .filter(Boolean);
 
           return (
             <div
@@ -949,7 +1401,6 @@ function CoachText({
                       "• ",
                     );
 
-                  // PATCHED REGEX: Safely strips spaces, dashes, and single asterisks, but ignores double asterisks
                   const cleanSub =
                     sub.replace(
                       /^(?:[•–-\s]+|\*(?!\*)\s*)+/,
@@ -1038,22 +1489,43 @@ export function CoachDrawer({
   entries: WeightEntry[];
   userId: string | null;
 }) {
-  const [open, setOpen] = useState(false);
-  
-  // Extract unique routines for the dynamic split picker
-  const recentRoutines = getRecentRoutines();
+  const [
+    open,
+    setOpen,
+  ] = useState(false);
+
+  // ==========================================================
+  // ROUTINES
+  // ==========================================================
+  //
+  // Memoised so rendering the drawer does not repeatedly parse
+  // and sort the Hevy history just to create the same buttons.
+  //
+
+  const recentRoutines =
+    useMemo(
+      () =>
+        getRecentRoutines(),
+      [workout],
+    );
 
   const {
     messages,
     add,
   } =
-    useCoachMessages(userId);
+    useCoachMessages(
+      userId,
+    );
 
-  const [input, setInput] =
-    useState("");
+  const [
+    input,
+    setInput,
+  ] = useState("");
 
-  const [loading, setLoading] =
-    useState(false);
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
 
   const [
     lastFailedPrompt,
@@ -1063,25 +1535,25 @@ export function CoachDrawer({
       null,
     );
 
-  const [apiKey, setApiKey] =
-    useState(
-      () =>
-        localStorage.getItem(
-          "p35_gemini_api_key",
-        ) || "",
-    );
+  const [
+    apiKey,
+    setApiKey,
+  ] = useState(
+    () =>
+      localStorage.getItem(
+        "p35_gemini_api_key",
+      ) || "",
+  );
 
   const [
     draftApiKey,
     setDraftApiKey,
-  ] =
-    useState(apiKey);
+  ] = useState(apiKey);
 
   const [
     keyDialogOpen,
     setKeyDialogOpen,
-  ] =
-    useState(false);
+  ] = useState(false);
 
   const [
     activeModel,
@@ -1138,7 +1610,8 @@ export function CoachDrawer({
       setTimeout(() => {
         endRef.current?.scrollIntoView(
           {
-            behavior: "auto",
+            behavior:
+              "auto",
           },
         );
       }, 50);
@@ -1162,7 +1635,8 @@ export function CoachDrawer({
 
     endRef.current.scrollIntoView(
       {
-        behavior: "smooth",
+        behavior:
+          "smooth",
       },
     );
   }, [
@@ -1185,7 +1659,9 @@ export function CoachDrawer({
       clean,
     );
 
-    setApiKey(clean);
+    setApiKey(
+      clean,
+    );
 
     setDraftApiKey(
       clean,
@@ -1194,6 +1670,10 @@ export function CoachDrawer({
     setKeyDialogOpen(
       false,
     );
+
+    // IMPORTANT:
+    // If the API key changes, its model cache is naturally
+    // separated because the cache is keyed by API key.
 
     toast.success(
       clean
@@ -1242,10 +1722,11 @@ export function CoachDrawer({
       return;
     }
 
-    // Keep state synchronised in case the key was
-    // changed in localStorage elsewhere.
+    // Keep state synchronised in case the key was changed
+    // elsewhere in localStorage.
     if (
-      cleanKey !== apiKey
+      cleanKey !==
+      apiKey
     ) {
       setApiKey(
         cleanKey,
@@ -1261,15 +1742,26 @@ export function CoachDrawer({
         "auto";
     }
 
-    setLoading(true);
+    setLoading(
+      true,
+    );
 
     setLastFailedPrompt(
       null,
     );
 
     try {
+      // Snapshot the current conversation before adding the
+      // new message. callGemini() adds the new prompt itself.
       const currentHistory =
         [...messages];
+
+      // Build the context once for this request.
+      const context =
+        buildContext(
+          workout,
+          entries,
+        );
 
       await add.mutateAsync(
         {
@@ -1287,10 +1779,7 @@ export function CoachDrawer({
           cleanKey,
           currentHistory,
           trimmed,
-          buildContext(
-            workout,
-            entries,
-          ),
+          context,
         );
 
       setActiveModel(
@@ -1299,14 +1788,16 @@ export function CoachDrawer({
 
       await add.mutateAsync(
         {
-          role: "assistant",
+          role:
+            "assistant",
           content:
             reply,
         },
       );
     } catch (error) {
       const errorMessage =
-        error instanceof Error
+        error instanceof
+        Error
           ? error.message
           : "Coach is unavailable.";
 
@@ -1323,7 +1814,9 @@ export function CoachDrawer({
         trimmed,
       );
     } finally {
-      setLoading(false);
+      setLoading(
+        false,
+      );
     }
   };
 
@@ -1395,7 +1888,10 @@ export function CoachDrawer({
               )}
 
             {messages.map(
-              (m, i) => {
+              (
+                m,
+                i,
+              ) => {
                 const isLastAssistant =
                   m.role ===
                     "assistant" &&
@@ -1496,31 +1992,43 @@ export function CoachDrawer({
           ================================================== */}
 
           <div className="space-y-2 border-t border-border bg-surface-2/40 px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-            
             {/* DYNAMIC SPLIT PICKER */}
-            {recentRoutines.length > 0 && (
+
+            {recentRoutines.length >
+              0 && (
               <div className="space-y-1.5 pb-1">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Today's Session Targets:
                 </p>
+
                 <div className="flex flex-wrap gap-1.5">
-                  {recentRoutines.map((routine) => (
-                    <Button
-                      key={routine}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 border-border bg-surface-2/60 px-2.5 text-xs hover:border-primary hover:text-primary"
-                      disabled={loading}
-                      onClick={() =>
-                        send(
-                          `I'm about to do "${routine}". Find the last time I logged this specific routine in my workout history, pull the exercises with their previous weights and RPE, and give me my targets and progression calls for today.`
-                        )
-                      }
-                    >
-                      {routine}
-                    </Button>
-                  ))}
+                  {recentRoutines.map(
+                    (
+                      routine,
+                    ) => (
+                      <Button
+                        key={
+                          routine
+                        }
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 border-border bg-surface-2/60 px-2.5 text-xs hover:border-primary hover:text-primary"
+                        disabled={
+                          loading
+                        }
+                        onClick={() =>
+                          send(
+                            `I'm about to do "${routine}". Find the last time I logged this specific routine in my workout history, pull the exercises with their previous weights and RPE, and give me my targets and progression calls for today.`,
+                          )
+                        }
+                      >
+                        {
+                          routine
+                        }
+                      </Button>
+                    ),
+                  )}
                 </div>
               </div>
             )}
@@ -1528,14 +2036,16 @@ export function CoachDrawer({
             <Button
               variant="secondary"
               className="w-full"
-              disabled={loading}
+              disabled={
+                loading
+              }
               onClick={() =>
                 send(
                   "Please analyse my last Hevy workout against current block targets. Evaluate RPE for each exercise, provide promote/stick/deload calls, and build my next session plan.",
                 )
               }
             >
-              <Sparkles className="size-4 mr-2" />
+              <Sparkles className="mr-2 size-4" />
               Analyse Last Session
             </Button>
 
@@ -1543,6 +2053,7 @@ export function CoachDrawer({
               className="flex items-end gap-2 rounded-xl border border-border bg-surface-2 p-2 transition-colors focus-within:border-primary"
               onSubmit={(e) => {
                 e.preventDefault();
+
                 void send(
                   input,
                 );
