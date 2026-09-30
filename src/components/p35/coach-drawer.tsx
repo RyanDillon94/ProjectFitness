@@ -38,6 +38,7 @@ import {
   Send,
   Sparkles,
   Cpu,
+  Notebook,
 } from "lucide-react";
 import { toast } from "sonner";
 import { APP_NAME, IS_PROJECT_35 } from "@/lib/config";
@@ -81,6 +82,20 @@ Trigger this specific structured format ONLY when the user explicitly asks to an
 - **Athlete Notes Feedback:** [details]
 
 - Conclude ONLY workout analyses with a 3-bullet "Next Session Battle Plan".
+
+ROUTINE PREP & TARGET MODE:
+Trigger this format when the user asks for targets or prep for a specific routine:
+- Search the HISTORICAL WORKOUT data for the MOST RECENT session matching that routine title.
+- For each exercise in that session:
+  * State what was logged last time: weight, reps, and RPE.
+  * Evaluate RPE against progression rules (RPE < 7.0: PROMOTE load; RPE 7.0–8.0: PROGRESS REPS; RPE 8.5–9.0: STICK; RPE 9.5–10: HOLD/DROP).
+  * State the target call for today's session.
+- Format strictly as:
+  • **[Exercise Name]**
+    - Last: [Weight x Reps @ RPE]
+    - Today's Target: [Specific weight/rep call]
+    - Note: [Athlete notes or progression cue if applicable]
+- Conclude with a single bullet focus cue for the session.
 ${
   IS_PROJECT_35
     ? ""
@@ -439,26 +454,17 @@ function buildContext(
   workout: HevyWorkout | null,
   entries: WeightEntry[],
 ) {
-  const block =
-    getActiveBlockCountdown();
+  const block = getActiveBlockCountdown();
 
-  const sorted = [...entries].sort(
-    (a, b) =>
-      a.date.localeCompare(b.date),
-  );
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
 
   const trend =
     sorted
       .slice(-6)
-      .map(
-        (e) =>
-          `${e.date}: ${e.weight} lb`,
-      )
-      .join(", ") ||
-    "no weigh-ins logged yet";
+      .map((e) => `${e.date}: ${e.weight} lb`)
+      .join(", ") || "no weigh-ins logged yet";
 
-  const latest =
-    sorted[sorted.length - 1]?.weight;
+  const latest = sorted[sorted.length - 1]?.weight;
 
   const lines = [
     `CURRENT BLOCK: ${block.phaseTitle} • ${block.blockName} (Week ${block.currentWeek} of ${block.totalWeeks})`,
@@ -468,87 +474,45 @@ function buildContext(
     `Long-Term ${getLongTermTarget()}`,
   ];
 
-  if (!IS_PROJECT_35) {
-    lines.push(...buildHistoryLines(workout));
-
-    return lines.join("\n");
-  }
-
-  if (workout) {
+  // Provide full session history regardless of project build
+  const history = buildHistoryLines(workout);
+  if (history.length > 2) {
+    lines.push(...history);
+  } else if (workout) {
     lines.push(
       `LATEST WORKOUT LOGGED IN HEVY: "${workout.title}" on ${workout.startTime ?? "recent"}.`,
-
-      ...workout.exercises.map(
-        (ex) => {
-          const isCardio =
-            isCardioExercise(
-              ex.title,
-              ex.sets,
-            );
-
-          const lastSet =
-            ex.sets[
-              ex.sets.length - 1
-            ];
-
-          if (isCardio) {
-            const cardioSummary =
-              ex.sets
-                .map((s: any) =>
-                  formatCardio(s),
-                )
-                .join(", ");
-
-            const notesStr = ex.notes
-              ? ` | Notes: "${ex.notes}"`
-              : "";
-
-            return `- ${ex.title} (Cardio): ${cardioSummary}${notesStr}`;
-          }
-
-          const setStr = ex.sets
-            .map((s: any) => {
-              const weightDisplay =
-                formatWeight(
-                  s,
-                  ex.title,
-                );
-
-              return `${weightDisplay} x ${
-                s.reps ?? "?"
-              }${
-                s.rpe != null
-                  ? ` @RPE${s.rpe}`
-                  : ""
-              }`;
-            })
-            .join(", ");
-
-          const rpeStr =
-            lastSet?.rpe != null
-              ? ` | Final set RPE: ${lastSet.rpe}`
-              : "";
-
-          const notesStr = ex.notes
-            ? ` | Notes: "${ex.notes}"`
-            : "";
-
-          const setNotesStr =
-            lastSet?.notes
-              ? ` | Set notes: "${lastSet.notes}"`
-              : "";
-
-          return `- ${ex.title}: ${setStr}${rpeStr}${notesStr}${setNotesStr}`;
-        },
-      ),
+      ...workout.exercises.map(describeExercise),
     );
   } else {
-    lines.push(
-      "No Hevy workout synced yet.",
-    );
+    lines.push("No Hevy workout synced yet.");
   }
 
   return lines.join("\n");
+}
+
+// ============================================================
+// EXTRACT RECENT UNIQUE SPLITS
+// ============================================================
+
+function getRecentRoutines(): string[] {
+  const history = getStoredHevyHistory();
+  if (!history || history.length === 0) return [];
+
+  // Sort newest first
+  const sorted = [...history].sort(
+    (a, b) => parseWorkoutDate(b.startTime) - parseWorkoutDate(a.startTime),
+  );
+
+  // Look across recent sessions and deduplicate routine titles
+  const titles: string[] = [];
+  for (const session of sorted.slice(0, 10)) {
+    const rawTitle = session.title?.trim();
+    if (rawTitle && !titles.includes(rawTitle)) {
+      titles.push(rawTitle);
+    }
+  }
+
+  return titles;
 }
 
 // ============================================================
@@ -1068,8 +1032,10 @@ export function CoachDrawer({
   entries: WeightEntry[];
   userId: string | null;
 }) {
-  const [open, setOpen] =
-    useState(false);
+  const [open, setOpen] = useState(false);
+  
+  // Extract unique routines for the dynamic split picker
+  const recentRoutines = getRecentRoutines();
 
   const {
     messages,
@@ -1524,6 +1490,35 @@ export function CoachDrawer({
           ================================================== */}
 
           <div className="space-y-2 border-t border-border bg-surface-2/40 px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            
+            {/* DYNAMIC SPLIT PICKER */}
+            {recentRoutines.length > 0 && (
+              <div className="space-y-1.5 pb-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Today's Session Targets:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {recentRoutines.map((routine) => (
+                    <Button
+                      key={routine}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 border-border bg-surface-2/60 px-2.5 text-xs hover:border-primary hover:text-primary"
+                      disabled={loading}
+                      onClick={() =>
+                        send(
+                          `I'm about to do "${routine}". Find the last time I logged this specific routine in my workout history, pull the exercises with their previous weights and RPE, and give me my targets and progression calls for today.`
+                        )
+                      }
+                    >
+                      {routine}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <Button
               variant="secondary"
               className="w-full"
@@ -1534,9 +1529,8 @@ export function CoachDrawer({
                 )
               }
             >
-              <Sparkles className="size-4" />
-              Analyse Workout &
-              Progression
+              <Sparkles className="size-4 mr-2" />
+              Analyse Last Session
             </Button>
 
             <form
