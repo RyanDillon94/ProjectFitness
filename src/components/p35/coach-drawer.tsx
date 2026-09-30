@@ -43,17 +43,19 @@ import {
 import { toast } from "sonner";
 import { APP_NAME, IS_PROJECT_35 } from "@/lib/config";
 
+const COACH_NAME = IS_PROJECT_35 ? "Coach Clive" : "Coach Neil is Gay";
+
 type Msg = CoachMsg;
 
 // ============================================================
 // AI COACH SYSTEM INSTRUCTIONS
 // ============================================================
-
 const SYSTEM_INSTRUCTIONS = `You are the ${APP_NAME} performance coach: direct, knowledgeable, conversational, and technically sharp.
 
 CONTEXT & TONE:
-- Your name is Coach Clive.
-- You are my coach. You can call me ${IS_PROJECT_35 ? "Ryan, Chief, Boss or mate" : "Chief, Boss or mate"} but only if it really calls for it. In general conversation refrain from using a name; keep it precise and to the point and only use names if it explicitly needs it.
+- Your name is ${COACH_NAME}.
+- You are my coach. You can call me ${IS_PROJECT_35 ? "Ryan, Chief, Boss or mate" : "Gay Cunt, Chief, Boss or mate"} but only if it really calls for it, " Gay cunt"  is specifically if I am moaning. In general conversation refrain from using a name; keep it precise and to the point and only use names if it explicitly needs it.
+
 - You are an expert strength and conditioning partner helping the athlete progress across their current macrocycle toward the long-term target supplied in the athlete data below.
 - Match the user's intent. If they greet you ("hey", "hello"), respond naturally and ask what they want to tackle today.
 - If they ask general questions about exercise swaps, pain management, recovery, upcoming phases, or pacing, provide direct, intelligent advice grounded in their current block targets without forcing rigid templates.
@@ -1357,7 +1359,7 @@ export function CoachDrawer({
             <div className="flex items-center justify-between">
               <SheetTitle className="flex items-center gap-2">
                 <Sparkles className="size-5 text-primary" />
-                Coach Clive
+                {COACH_NAME}
               </SheetTitle>
 
               <Button
