@@ -91,15 +91,18 @@ Trigger this format when the user asks for targets or prep for a specific routin
   * Evaluate RPE against progression rules (RPE < 7.0: PROMOTE load; RPE 7.0–8.0: PROGRESS REPS; RPE 8.5–9.0: STICK; RPE 9.5–10: HOLD/DROP).
   * State the target call for today's session.
 - Format strictly as:
-  • **[Exercise Name]**
-    - Last: [Weight x Reps @ RPE]
-    - Today's Target: [Specific weight/rep call]
-    - Note: [Athlete notes or progression cue if applicable]
+
+**[Exercise Name]**
+- **Last:** [Weight x Reps @ RPE]
+- **Today's Target:** [Specific weight/rep call]
+- **Note:** [Athlete notes or progression cue if applicable]
+
 - Conclude with a single bullet focus cue for the session.
 ${
   IS_PROJECT_35
     ? ""
     : `
+
 WORKOUT HISTORY RULES:
 - Every stored Hevy workout is a separate session.
 - Use the supplied WORKOUT ID and date/time to distinguish sessions.
