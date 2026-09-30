@@ -1194,7 +1194,7 @@ async function callGemini(
       );
 
       const url =
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent`;
 
       const res =
         await fetch(
