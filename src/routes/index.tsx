@@ -184,7 +184,7 @@ function Dashboard({ userId }: { userId: string }) {
 
       <CoachDrawer workout={workout} entries={entries} userId={userId} />
       
-       <TestModePanel /> 
+    {/*   <TestModePanel /> */}
     </main>
   );
 }
