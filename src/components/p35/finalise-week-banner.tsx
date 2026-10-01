@@ -465,10 +465,11 @@ Do NOT output any empty bullet points. Do NOT alter the headers.`;
     const mondayKey = getMondayKeyForDate(lockDateStr);
     const formatShortDate = (dStr: string) => new Date(dStr).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" });
 
+    // FIX: Filter out previous week archives to prevent a recursive storage explosion
     const fullBackupData: Record<string, string> = {};
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith("p35_")) {
+      if (key && key.startsWith("p35_") && !key.startsWith("p35_finalised_week_")) {
         fullBackupData[key] = localStorage.getItem(key) || "";
       }
     }
@@ -487,12 +488,23 @@ Do NOT output any empty bullet points. Do NOT alter the headers.`;
       fullLocalStorageSnapshot: fullBackupData,
     };
 
+    // FIX: Wrap the lock-in explicitly so if limits are hit, it gracefully falls back
     try {
       localStorage.setItem(weekKey, JSON.stringify(weekArchiveRecord));
       localStorage.setItem("p35_last_locked_week", lockDateStr);
+    } catch (err) {
+      console.warn("Storage quota exceeded. Saving without full snapshot.", err);
+      // If Hevy cache is too massive, drop the snapshot and try again so the week still successfully locks.
+      delete (weekArchiveRecord as any).fullLocalStorageSnapshot;
+      localStorage.setItem(weekKey, JSON.stringify(weekArchiveRecord));
+      localStorage.setItem("p35_last_locked_week", lockDateStr);
+    }
+
+    // FIX: Decouple the cloud backup from the local state updates so a network fail doesn't break the UI
+    try {
       await triggerFridayBackup(lockDateStr);
     } catch (err) {
-      console.error("Failed to save weekly archive", err);
+      console.error("Cloud backup failed", err);
     }
     
     setIsOpen(false);
