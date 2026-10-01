@@ -75,7 +75,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
             `${pending.current === "baseline" ? "Baseline" : "Current"} (${selectedAngle.toUpperCase()}) saved.`,
           );
 
-          // Once uploaded, securely mark this week as cleared and drop the pending flag
           const currentProgramWeek = getProgramWeekNumber(new Date());
           localStorage.setItem(`p35_photo_cleared_week_${currentProgramWeek}`, "true");
 
@@ -119,11 +118,12 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   ];
 
   return (
-    <section className="panel p-5 space-y-4">
+    // NEW GLOWING OUTER CONTAINER LOGIC
+    <section className={`panel p-5 space-y-4 transition-colors ${isPhotoPending ? "border-amber-500/50 bg-amber-500/5 animate-pulse" : ""}`}>
       {/* Header with Angle Tabs & Archive Button */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Camera className="size-5 text-primary" />
+          <Camera className={`size-5 ${isPhotoPending ? "text-amber-500" : "text-primary"}`} />
           <h2 className="text-lg font-bold">Photo Checkpoint</h2>
           {upload.isPending && <Loader2 className="size-4 animate-spin text-primary" />}
         </div>
@@ -159,19 +159,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
           </div>
         </div>
       </div>
-
-      {/* Overdue Banner - Only visible if flag is true */}
-      {isPhotoPending && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3.5 space-y-1.5 shadow-sm">
-          <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs">
-            <AlertCircle className="size-4" />
-            <span>Checkpoint Photos Required</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            You locked in a 4-week milestone but haven't updated your photos yet. Upload a 'Current' photo to clear this requirement.
-          </p>
-        </div>
-      )}
 
       {/* Week 12 Closeout Banner */}
       {isFinalWeek && (
