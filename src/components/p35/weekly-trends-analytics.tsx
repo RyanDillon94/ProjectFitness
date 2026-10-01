@@ -246,9 +246,7 @@ export function WeeklyTrendsAnalytics() {
             <div className="mt-6 pt-5 border-t border-border space-y-4">
               <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
                 Training Momentum (7d vs 4-Wk Avg)
-              </h3><p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-  Volume and strength reflect the last 7 days compared against your rolling 4-week baseline.
-</p>
+              </h3>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
@@ -328,7 +326,9 @@ export function WeeklyTrendsAnalytics() {
                 </div>
               </div>
             </div>
-
+<p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+  Volume and strength reflect the last 7 days compared against your rolling 4-week baseline.
+</p>
             <div className="pt-2">
               <a
                 href="hevy://"
