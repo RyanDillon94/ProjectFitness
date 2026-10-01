@@ -185,6 +185,18 @@ function Dashboard({ userId }: { userId: string }) {
       <CoachDrawer workout={workout} entries={entries} userId={userId} />
       
       <TestModePanel /> 
+<Button 
+  variant="destructive" 
+  size="sm" 
+  onClick={() => {
+    localStorage.removeItem("p35_photo_checkpoint_pending");
+    localStorage.removeItem("p35_photo_was_pending_debt");
+    window.location.reload();
+  }}
+>
+  NUKE GHOST DEBT
+</Button>
+
     </main>
   );
 }
