@@ -46,7 +46,11 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   const isFinalWeek = currentWeek >= totalWeeks;
   const isPhotoWeek = currentWeek % 4 === 0;
 
-  const requiresAttention = (isPhotoWeek && !isCleared) || hasDebt;
+  // Split logic: One for the overdue penalty, one for the standard weekly reminder
+  const isOverdue = hasDebt;
+  const isPhotoWeekPending = isPhotoWeek && !isCleared;
+  const showReminderBanner = isOverdue || isPhotoWeekPending;
+
   const activeAnglePhotos = photos?.[selectedAngle] || { baseline: null, current: null };
 
   useEffect(() => {
@@ -124,24 +128,12 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   ];
 
   return (
-    <section className={`panel p-5 space-y-4 transition-all duration-500 ${requiresAttention ? "border-amber-500/50 bg-amber-500/5 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "border-primary/30 bg-surface-2/40"}`}>
+    <section className={`panel p-5 space-y-4 transition-all duration-500 ${isOverdue ? "border-amber-500/50 bg-amber-500/5 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "border-primary/30 bg-surface-2/40"}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Camera className={`size-5 transition-colors ${requiresAttention ? "text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]" : "text-primary"}`} />
+          <Camera className={`size-5 transition-colors ${isOverdue ? "text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]" : "text-primary"}`} />
           <h2 className="text-lg font-bold">Photo Checkpoint</h2>
           {upload.isPending && <Loader2 className="size-4 animate-spin text-primary" />}
-<Button 
-  variant="destructive" 
-  size="sm" 
-  onClick={() => {
-    localStorage.removeItem("p35_photo_checkpoint_pending");
-    localStorage.removeItem("p35_photo_was_pending_debt");
-    window.location.reload();
-  }}
->
-  NUKE GHOST DEBT
-</Button>
-
         </div>
 
         <div className="flex items-center gap-2">
@@ -175,16 +167,16 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         </div>
       </div>
 
-      {/* DYNAMIC CONTEXT BANNER */}
-      {requiresAttention && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-3">
-          <AlertCircle className="size-5 text-amber-500 shrink-0 mt-0.5" />
+      {/* DYNAMIC CONTEXT BANNER - Standard Green for Photo Week, Amber for Overdue */}
+      {showReminderBanner && (
+        <div className={`rounded-lg border p-3 flex items-start gap-3 transition-colors ${isOverdue ? "border-amber-500/40 bg-amber-500/10" : "border-primary/40 bg-primary/10"}`}>
+          <AlertCircle className={`size-5 shrink-0 mt-0.5 ${isOverdue ? "text-amber-500" : "text-primary"}`} />
           <div className="text-xs space-y-1">
-            <p className="font-semibold text-amber-500">
-              {hasDebt ? "Photos Overdue" : "Photo Checkpoint Week"}
+            <p className={`font-semibold ${isOverdue ? "text-amber-500" : "text-primary"}`}>
+              {isOverdue ? "Photos Overdue" : "Photo Checkpoint Week"}
             </p>
             <p className="text-muted-foreground">
-              {hasDebt 
+              {isOverdue 
                 ? "You locked in without uploading photos. Upload your checkpoint photos now to clear this requirement." 
                 : "It's photo week. Remember to take and upload your photos in prep for Sunday's lock-in."}
             </p>
@@ -309,13 +301,13 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
       </div>
 
       <Button
-        variant={requiresAttention ? "default" : "secondary"}
-        className={`w-full transition-colors ${requiresAttention ? "bg-amber-500 text-black hover:bg-amber-400 font-bold shadow-[0_0_12px_rgba(245,158,11,0.3)]" : ""}`}
+        variant={isOverdue ? "default" : "secondary"}
+        className={`w-full transition-colors ${isOverdue ? "bg-amber-500 text-black hover:bg-amber-400 font-bold shadow-[0_0_12px_rgba(245,158,11,0.3)]" : ""}`}
         disabled={upload.isPending}
         onClick={() => pick("current")}
       >
         <ImagePlus className="size-4 mr-2" /> 
-        {requiresAttention ? "Upload Checkpoint Photos" : `Upload current (${selectedAngle})`}
+        {isOverdue ? "Upload Checkpoint Photos" : `Upload current (${selectedAngle})`}
       </Button>
 
       <input
