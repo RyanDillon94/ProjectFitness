@@ -175,7 +175,6 @@ function Dashboard({ userId }: { userId: string }) {
       <div className="flex flex-col items-center gap-2 pt-4 border-t border-border/40">
         <WeeklyTrendsAnalytics/>
         <MissionArchiveCard />
-        <DeloadCard />
         <DataBackupCard />
       </div>
 
