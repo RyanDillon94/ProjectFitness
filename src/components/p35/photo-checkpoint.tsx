@@ -118,8 +118,8 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   ];
 
   return (
-    // FIX: Replaced animate-pulse with a stable, aesthetic amber box-shadow glow
-    <section className={`panel p-5 space-y-4 transition-all duration-500 ${isPhotoPending ? "border-amber-500/60 bg-amber-500/5 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : ""}`}>
+    // Uses the primary theme defaults when NOT pending, swaps to amber-pulse when pending
+    <section className={`panel p-5 space-y-4 transition-all duration-500 ${isPhotoPending ? "border-amber-500/50 bg-amber-500/5 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "border-primary/30 bg-surface-2/40"}`}>
       {/* Header with Angle Tabs & Archive Button */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
