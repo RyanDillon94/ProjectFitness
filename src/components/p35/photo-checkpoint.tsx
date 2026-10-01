@@ -118,12 +118,12 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   ];
 
   return (
-    // NEW GLOWING OUTER CONTAINER LOGIC
-    <section className={`panel p-5 space-y-4 transition-colors ${isPhotoPending ? "border-amber-500/50 bg-amber-500/5 animate-pulse" : ""}`}>
+    // FIX: Replaced animate-pulse with a stable, aesthetic amber box-shadow glow
+    <section className={`panel p-5 space-y-4 transition-all duration-500 ${isPhotoPending ? "border-amber-500/60 bg-amber-500/5 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : ""}`}>
       {/* Header with Angle Tabs & Archive Button */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Camera className={`size-5 ${isPhotoPending ? "text-amber-500" : "text-primary"}`} />
+          <Camera className={`size-5 transition-colors ${isPhotoPending ? "text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]" : "text-primary"}`} />
           <h2 className="text-lg font-bold">Photo Checkpoint</h2>
           {upload.isPending && <Loader2 className="size-4 animate-spin text-primary" />}
         </div>
@@ -255,7 +255,7 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
 
       <Button
         variant={isPhotoPending ? "default" : "secondary"}
-        className={`w-full ${isPhotoPending ? "bg-amber-500 text-black hover:bg-amber-400 font-bold" : ""}`}
+        className={`w-full transition-colors ${isPhotoPending ? "bg-amber-500 text-black hover:bg-amber-400 font-bold shadow-[0_0_12px_rgba(245,158,11,0.3)]" : ""}`}
         disabled={upload.isPending}
         onClick={() => pick("current")}
       >
