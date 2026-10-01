@@ -118,9 +118,8 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   ];
 
   return (
-    // Uses the primary theme defaults when NOT pending, swaps to amber-pulse when pending
-    <section className={`panel p-5 space-y-4 transition-all duration-500 ${isPhotoPending ? "border-amber-500/50 bg-amber-500/5 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "border-primary/30 bg-surface-2/40"}`}>
-      {/* Header with Angle Tabs & Archive Button */}
+    // FIX: Flashes amber when overdue, reverts to perfectly standard panel otherwise
+    <section className={`panel p-5 space-y-4 transition-all duration-500 ${isPhotoPending ? "border-amber-500/50 bg-amber-500/5 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.15)]" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Camera className={`size-5 transition-colors ${isPhotoPending ? "text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]" : "text-primary"}`} />
@@ -140,7 +139,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
             </button>
           )}
 
-          {/* Tab Pills */}
           <div className="flex rounded-lg border border-border bg-surface-2/60 p-1">
             {ANGLES.map((a) => (
               <button
@@ -160,7 +158,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         </div>
       </div>
 
-      {/* Week 12 Closeout Banner */}
       {isFinalWeek && (
         <div className="rounded-lg border border-primary/40 bg-primary/10 p-3.5 space-y-2">
           <div className="flex items-center gap-2 text-primary font-semibold text-xs">
@@ -186,7 +183,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         </div>
       )}
 
-      {/* Side-by-Side Comparison Container */}
       <div className="grid grid-cols-2 gap-3">
         {slots.map(({ slot, label, sublabel }) => {
           const photoSrc = activeAnglePhotos[slot];
@@ -274,7 +270,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         }}
       />
 
-      {/* Fullscreen Single Photo Modal */}
       {modalImage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm" onClick={() => setModalImage(null)}>
           <div className="relative max-h-[90vh] max-w-sm w-full overflow-hidden rounded-2xl border border-border bg-surface-2 p-2 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -289,7 +284,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         </div>
       )}
 
-      {/* Historical Archive Gallery Modal */}
       {archiveOpen && (
         <ArchiveModal archive={archive} angle={archiveAngle} onAngleChange={setArchiveAngle} onClose={() => setArchiveOpen(false)} />
       )}
