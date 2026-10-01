@@ -245,7 +245,7 @@ export function WeeklyTrendsAnalytics() {
 
             <div className="mt-6 pt-5 border-t border-border space-y-4">
               <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-                Training Momentum (7d vs 4-Wk Avg)
+                Training Momentum
               </h3>
 
               <div className="grid grid-cols-2 gap-3">
