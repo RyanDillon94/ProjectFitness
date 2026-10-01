@@ -19,6 +19,7 @@ import {
   Maximize2,
   Trash2,
   X,
+  AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,7 +35,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveAngle, setArchiveAngle] = useState<PhotoAngle>("front");
   
-  // Two explicit states: One for the current week's status, one for overdue debt from previous weeks
   const [isCleared, setIsCleared] = useState(false);
   const [hasDebt, setHasDebt] = useState(false);
 
@@ -46,10 +46,8 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   const isFinalWeek = currentWeek >= totalWeeks;
   const isPhotoWeek = currentWeek % 4 === 0;
 
-  const activeAnglePhotos = photos?.[selectedAngle] || { baseline: null, current: null };
-
-  // Calculate if the component needs to scream at you
   const requiresAttention = (isPhotoWeek && !isCleared) || hasDebt;
+  const activeAnglePhotos = photos?.[selectedAngle] || { baseline: null, current: null };
 
   useEffect(() => {
     const checkStatus = () => {
@@ -83,10 +81,8 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
             `${pending.current === "baseline" ? "Baseline" : "Current"} (${selectedAngle.toUpperCase()}) saved.`
           );
 
-          // Mark current week as cleared
           localStorage.setItem(`p35_photo_cleared_week_${currentWeek}`, "true");
 
-          // Clear any active overdue debt and remember we did it (in case they delete the photo)
           if (localStorage.getItem("p35_photo_checkpoint_pending") === "true") {
             localStorage.setItem("p35_photo_checkpoint_pending", "false");
             localStorage.setItem("p35_photo_was_pending_debt", "true");
@@ -167,6 +163,23 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         </div>
       </div>
 
+      {/* DYNAMIC CONTEXT BANNER */}
+      {requiresAttention && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-3">
+          <AlertCircle className="size-5 text-amber-500 shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <p className="font-semibold text-amber-500">
+              {hasDebt ? "Photos Overdue" : "Photo Checkpoint Week"}
+            </p>
+            <p className="text-muted-foreground">
+              {hasDebt 
+                ? "You locked in without uploading photos. Upload your checkpoint photos now to clear this requirement." 
+                : "It's photo week. Remember to take and upload your photos in prep for Sunday's lock-in."}
+            </p>
+          </div>
+        </div>
+      )}
+
       {isFinalWeek && (
         <div className="rounded-lg border border-primary/40 bg-primary/10 p-3.5 space-y-2">
           <div className="flex items-center gap-2 text-primary font-semibold text-xs">
@@ -230,10 +243,8 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
                                 );
 
                                 if (!hasOtherCurrent) {
-                                  // Clear the current week flag so it reverts to amber if it's currently week 4
                                   localStorage.removeItem(`p35_photo_cleared_week_${currentWeek}`);
                                   
-                                  // Re-instate any historical debt if applicable
                                   const wasPendingDebt = localStorage.getItem("p35_photo_was_pending_debt") === "true";
                                   if (wasPendingDebt) {
                                     localStorage.setItem("p35_photo_checkpoint_pending", "true");
