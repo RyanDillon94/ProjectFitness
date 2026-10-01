@@ -144,15 +144,24 @@ WORKOUT HISTORY RULES:
 // ============================================================
 
 const PREFERRED_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
-  "gemini-2.5-pro",
-  "gemini-1.5-flash",
-  "gemini-1.5-pro",
 ];
 
 // ============================================================
-// GEMINI MODEL CACHES & HELPERS
+// GEMINI MODEL CACHE
+// ============================================================
+
+const modelDiscoveryCache = new Map<string, Promise<string[]>>();
+
+// ============================================================
+// GEMINI MODEL COOLDOWN CACHE
 // ============================================================
 
 const modelCooldownCache = new Map<string, Map<string, number>>();
@@ -180,6 +189,101 @@ function isModelCoolingDown(apiKey: string, model: string): boolean {
     return false;
   }
   return true;
+}
+
+// ============================================================
+// DISCOVER AVAILABLE GEMINI MODELS
+// ============================================================
+
+async function getAvailableModels(apiKey: string): Promise<string[]> {
+  const availableModels: {
+    baseModelId?: string;
+    name?: string;
+    supportedGenerationMethods?: string[];
+  }[] = [];
+
+  let pageToken = "";
+
+  do {
+    const query = new URLSearchParams({
+      key: apiKey,
+      pageSize: "1000",
+    });
+
+    if (pageToken) query.set("pageToken", pageToken);
+
+    const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?${query.toString()}`;
+    const listRes = await fetch(listUrl, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const listData = await listRes.json().catch(() => ({}));
+
+    if (!listRes.ok) {
+      throw new Error(
+        listData.error?.message ||
+          `Unable to list Gemini models (HTTP ${listRes.status}).`,
+      );
+    }
+
+    if (Array.isArray(listData.models)) {
+      availableModels.push(...listData.models);
+    }
+
+    pageToken = listData.nextPageToken || "";
+  } while (pageToken);
+
+  const modelIds = availableModels
+    .filter((m) => Array.isArray(m.supportedGenerationMethods))
+    .filter((m) =>
+      m.supportedGenerationMethods!.includes("generateContent"),
+    )
+    .map((m) => {
+      if (m.baseModelId) return m.baseModelId;
+      if (m.name) return m.name.replace(/^models\//, "");
+      return "";
+    })
+    .filter(Boolean);
+
+  return Array.from(new Set(modelIds));
+}
+
+function getCachedAvailableModels(apiKey: string): Promise<string[]> {
+  const cached = modelDiscoveryCache.get(apiKey);
+  if (cached) return cached;
+
+  const promise = getAvailableModels(apiKey)
+    .then((models) => models)
+    .catch((error) => {
+      modelDiscoveryCache.delete(apiKey);
+      throw error;
+    });
+
+  modelDiscoveryCache.set(apiKey, promise);
+  return promise;
+}
+
+function isUsableCoachModel(model: string): boolean {
+  const lower = model.toLowerCase();
+  const excludedPatterns = [
+    "embedding",
+    "image",
+    "imagen",
+    "live",
+    "tts",
+    "transcribe",
+    "robotics",
+    "veo",
+  ];
+  return !excludedPatterns.some((pattern) => lower.includes(pattern));
+}
+
+function rankModels(availableModels: string[]): string[] {
+  const usableModels = availableModels.filter(isUsableCoachModel);
+  const preferred = PREFERRED_MODELS.filter((m) => usableModels.includes(m));
+  const otherModels = usableModels.filter((m) => !PREFERRED_MODELS.includes(m));
+  return [...preferred, ...otherModels];
 }
 
 // ============================================================
@@ -599,7 +703,7 @@ async function fetchWithTimeout(
 }
 
 // ============================================================
-// CALL GEMINI (FAST FALLBACK ORDER)
+// CALL GEMINI
 // ============================================================
 
 async function callGemini(
@@ -648,9 +752,21 @@ async function callGemini(
     },
   };
 
+  let rankedModels: string[];
+  try {
+    const available = await getCachedAvailableModels(apiKey);
+    rankedModels = rankModels(available);
+  } catch {
+    rankedModels = [...PREFERRED_MODELS];
+  }
+
+  if (rankedModels.length === 0) {
+    rankedModels = [...PREFERRED_MODELS];
+  }
+
   let lastErrorMsg = "Gemini request failed.";
 
-  for (const model of PREFERRED_MODELS) {
+  for (const model of rankedModels) {
     if (isModelCoolingDown(apiKey, model)) {
       continue;
     }
