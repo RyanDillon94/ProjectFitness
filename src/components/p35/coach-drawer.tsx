@@ -100,7 +100,9 @@ Trigger this specific structured format ONLY when the user explicitly asks to an
   * Evaluate pace, duration, and distance against daily step and aerobic recovery goals.
   * Next session call should focus on maintaining baseline, increasing duration, or managing joint impact.
 
-- For each exercise, use the exact label format:
+- For each exercise, format strictly with a standalone heading (NO bullet on the exercise name):
+
+### [Exercise Name]
 - **Logged:** [details]
 - **Assessment:** [details]
 - **Next Session Call:** [details]
@@ -117,7 +119,7 @@ Trigger this format when the user asks for targets or prep for a specific routin
   * State the target call for today's session.
 - Format strictly as:
 
-**[Exercise Name]**
+### [Exercise Name]
 - **Last:** [Weight x Reps @ RPE]
 - **Today's Target:** [Specific weight/rep call]
 - **Note:** [Athlete notes or progression cue if applicable]
@@ -837,14 +839,13 @@ async function callGemini(
 }
 
 // ============================================================
-// FORMATTED AI MESSAGE (WITH WORKOUT HEADING FIX)
+// FORMATTED AI MESSAGE (WITH WORKOUT HEADING FIX & WHITE TEXT)
 // ============================================================
 
 function CoachText({ text }: { text: unknown }) {
   const safeText =
     typeof text === "string" ? text : text == null ? "" : String(text);
 
-  // Normalise lines, remove dividers, and filter empty whitespace
   const rawLines = safeText
     .replace(/---/g, "")
     .split(/\r?\n/)
@@ -852,28 +853,40 @@ function CoachText({ text }: { text: unknown }) {
     .filter(Boolean);
 
   return (
-    <div className="space-y-2 text-sm leading-relaxed">
+    <div className="space-y-1.5 text-sm leading-relaxed text-white">
       {rawLines.map((line, idx) => {
-        // Detect Markdown headers, numbered headers, or bold exercise titles: **Exercise Name**
-        const isHeading =
-          /^#{1,4}\s+/.test(line) ||
-          (/^(\*\*\d+\.|\*\*)[^*]+?\*\*$/.test(line) && !line.includes(":"));
-
-        const isBullet = /^[•*–-]\s+/.test(line);
-
-        const cleanLine = line
+        // Strip bullet / markdown header markers first to inspect the content
+        const cleanContent = line
           .replace(/^#{1,4}\s+/, "")
           .replace(/^[•*–-]\s+/, "")
           .trim();
 
-        if (isHeading) {
+        // An exercise/section heading is either:
+        // 1. A markdown header (### Heading)
+        // 2. Any bold line (with or without a bullet dash) that does NOT contain a field colon like "**Logged:**"
+        const isHeader =
+          /^#{1,4}\s+/.test(line) ||
+          (/^(\*\*\d+\.|\*\*)[^*]+?\*\*$/.test(cleanContent) &&
+            !cleanContent.includes(":")) ||
+          (/^[A-Z][A-Za-z0-9\s()/-]+:$/.test(cleanContent) &&
+            !cleanContent.toLowerCase().startsWith("logged") &&
+            !cleanContent.toLowerCase().startsWith("assessment") &&
+            !cleanContent.toLowerCase().startsWith("next session") &&
+            !cleanContent.toLowerCase().startsWith("athlete notes"));
+
+        const isBullet = !isHeader && /^[•*–-]\s+/.test(line);
+
+        if (isHeader) {
+          const headingText = cleanContent
+            .replace(/\*\*/g, "")
+            .replace(/:$/, "");
+
           return (
-            <h4
-              key={idx}
-              className="font-bold text-foreground mt-3 mb-1 text-sm tracking-tight"
-            >
-              {cleanLine.replace(/\*\*/g, "")}
-            </h4>
+            <div key={idx} className="pt-2 pb-0.5 first:pt-0">
+              <h4 className="font-bold text-white text-sm tracking-tight">
+                {headingText}
+              </h4>
+            </div>
           );
         }
 
@@ -882,21 +895,21 @@ function CoachText({ text }: { text: unknown }) {
             key={idx}
             className={
               isBullet
-                ? "pl-3 flex items-start gap-2 font-medium"
-                : "font-normal text-muted-foreground/90"
+                ? "pl-3 flex items-start gap-2 font-medium text-white"
+                : "font-normal text-white"
             }
           >
             {isBullet && (
-              <span className="text-primary mt-1 shrink-0">•</span>
+              <span className="text-primary mt-1 shrink-0 select-none">•</span>
             )}
-            <span className="flex-1">
-              {cleanLine.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+            <span className="flex-1 text-white">
+              {cleanContent.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
                 part.startsWith("**") && part.endsWith("**") ? (
                   <strong key={i} className="text-primary font-semibold">
                     {part.slice(2, -2)}
                   </strong>
                 ) : (
-                  <span key={i}>{part}</span>
+                  <span key={i} className="text-white">{part}</span>
                 ),
               )}
             </span>
