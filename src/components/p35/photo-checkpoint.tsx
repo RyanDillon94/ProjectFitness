@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { getActiveBlockCountdown } from "@/lib/project35";
+import { getActiveBlockCountdown, getProgramWeekNumber } from "@/lib/project35";
 import {
   usePhotos,
   type ArchivedBlockPhotos,
@@ -19,6 +19,7 @@ import {
   Maximize2,
   Trash2,
   X,
+  AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,6 +34,7 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   const [modalImage, setModalImage] = useState<{ src: string; title: string } | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveAngle, setArchiveAngle] = useState<PhotoAngle>("front");
+  const [isPhotoPending, setIsPhotoPending] = useState(false);
 
   const { photos, archive = [], upload, removePhoto, closeAndArchiveBlock } = usePhotos(userId);
   const pending = useRef<PhotoSlot>("baseline");
@@ -42,6 +44,16 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   const isFinalWeek = currentWeek >= totalWeeks;
 
   const activeAnglePhotos = photos?.[selectedAngle] || { baseline: null, current: null };
+
+  // Listen for the pending requirement flag
+  useEffect(() => {
+    const checkPending = () => {
+      setIsPhotoPending(localStorage.getItem("p35_photo_checkpoint_pending") === "true");
+    };
+    checkPending();
+    window.addEventListener("p35-photo-pending-updated", checkPending);
+    return () => window.removeEventListener("p35-photo-pending-updated", checkPending);
+  }, []);
 
   const pick = (slot: PhotoSlot) => {
     pending.current = slot;
@@ -54,13 +66,25 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
       toast.error("Image too large. Use one under 10 MB.");
       return;
     }
+    
     upload.mutate(
       { angle: selectedAngle, slot: pending.current, file },
       {
-        onSuccess: () =>
+        onSuccess: () => {
           toast.success(
             `${pending.current === "baseline" ? "Baseline" : "Current"} (${selectedAngle.toUpperCase()}) saved.`,
-          ),
+          );
+
+          // Once uploaded, securely mark this week as cleared and drop the pending flag
+          const currentProgramWeek = getProgramWeekNumber(new Date());
+          localStorage.setItem(`p35_photo_cleared_week_${currentProgramWeek}`, "true");
+
+          if (localStorage.getItem("p35_photo_checkpoint_pending") === "true") {
+            localStorage.setItem("p35_photo_checkpoint_pending", "false");
+            setIsPhotoPending(false);
+            window.dispatchEvent(new Event("p35-photo-pending-updated"));
+          }
+        },
         onError: (error) =>
           toast.error(error instanceof Error ? error.message : "Upload failed."),
       },
@@ -83,9 +107,7 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         blockName: `${phaseTitle} • ${blockName}`,
       },
       {
-        onSuccess: () => {
-          toast.success("Block closed! Baseline populated for next block.");
-        },
+        onSuccess: () => toast.success("Block closed! Baseline populated for next block."),
         onError: () => toast.error("Could not archive block photos."),
       },
     );
@@ -137,6 +159,19 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
           </div>
         </div>
       </div>
+
+      {/* Overdue Banner - Only visible if flag is true */}
+      {isPhotoPending && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3.5 space-y-1.5 shadow-sm">
+          <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs">
+            <AlertCircle className="size-4" />
+            <span>Checkpoint Photos Required</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            You locked in a 4-week milestone but haven't updated your photos yet. Upload a 'Current' photo to clear this requirement.
+          </p>
+        </div>
+      )}
 
       {/* Week 12 Closeout Banner */}
       {isFinalWeek && (
@@ -232,12 +267,13 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
       </div>
 
       <Button
-        variant="secondary"
-        className="w-full"
+        variant={isPhotoPending ? "default" : "secondary"}
+        className={`w-full ${isPhotoPending ? "bg-amber-500 text-black hover:bg-amber-400 font-bold" : ""}`}
         disabled={upload.isPending}
         onClick={() => pick("current")}
       >
-        <ImagePlus className="size-4 mr-2" /> Upload current ({selectedAngle})
+        <ImagePlus className="size-4 mr-2" /> 
+        {isPhotoPending ? "Upload Checkpoint Photos" : `Upload current (${selectedAngle})`}
       </Button>
 
       <input
@@ -253,41 +289,22 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
 
       {/* Fullscreen Single Photo Modal */}
       {modalImage && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
-          onClick={() => setModalImage(null)}
-        >
-          <div
-            className="relative max-h-[90vh] max-w-sm w-full overflow-hidden rounded-2xl border border-border bg-surface-2 p-2 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm" onClick={() => setModalImage(null)}>
+          <div className="relative max-h-[90vh] max-w-sm w-full overflow-hidden rounded-2xl border border-border bg-surface-2 p-2 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-3 py-2">
               <p className="text-xs font-semibold text-primary">{modalImage.title}</p>
-              <button
-                type="button"
-                onClick={() => setModalImage(null)}
-                className="rounded-full bg-surface-2/80 p-1 text-muted-foreground hover:text-foreground"
-              >
+              <button type="button" onClick={() => setModalImage(null)} className="rounded-full bg-surface-2/80 p-1 text-muted-foreground hover:text-foreground">
                 <X className="size-4" />
               </button>
             </div>
-            <img
-              src={modalImage.src}
-              alt={modalImage.title}
-              className="max-h-[75vh] w-full rounded-xl object-contain"
-            />
+            <img src={modalImage.src} alt={modalImage.title} className="max-h-[75vh] w-full rounded-xl object-contain" />
           </div>
         </div>
       )}
 
       {/* Historical Archive Gallery Modal */}
       {archiveOpen && (
-        <ArchiveModal
-          archive={archive}
-          angle={archiveAngle}
-          onAngleChange={setArchiveAngle}
-          onClose={() => setArchiveOpen(false)}
-        />
+        <ArchiveModal archive={archive} angle={archiveAngle} onAngleChange={setArchiveAngle} onClose={() => setArchiveOpen(false)} />
       )}
     </section>
   );
@@ -307,24 +324,14 @@ function ArchiveModal({
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="relative max-h-[90vh] max-w-lg w-full flex flex-col overflow-hidden rounded-2xl border border-border bg-surface-1 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative max-h-[90vh] max-w-lg w-full flex flex-col overflow-hidden rounded-2xl border border-border bg-surface-1 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-border p-4">
           <div className="flex items-center gap-2">
             <FolderArchive className="size-4 text-primary" />
             <h3 className="text-sm font-bold">Historical Block Archive</h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full p-1 text-muted-foreground hover:text-foreground"
-          >
+          <button type="button" onClick={onClose} className="rounded-full p-1 text-muted-foreground hover:text-foreground">
             <X className="size-4" />
           </button>
         </div>
@@ -335,11 +342,7 @@ function ArchiveModal({
               key={a.id}
               type="button"
               onClick={() => onAngleChange(a.id)}
-              className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
-                angle === a.id
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${angle === a.id ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
             >
               {a.label}
             </button>
@@ -348,24 +351,15 @@ function ArchiveModal({
 
         <div className="overflow-y-auto p-4 space-y-3">
           {archive.length === 0 ? (
-            <p className="py-8 text-center text-xs text-muted-foreground">
-              No archived blocks yet.
-            </p>
+            <p className="py-8 text-center text-xs text-muted-foreground">No archived blocks yet.</p>
           ) : (
             archive.map((record, idx) => {
               const angleData = record[angle] || { baseline: null, final: null };
               const isOpen = openIndex === idx;
 
               return (
-                <div
-                  key={record.blockId + record.dateClosed}
-                  className="rounded-xl border border-border bg-surface-2/30 overflow-hidden transition-all"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setOpenIndex(isOpen ? null : idx)}
-                    className="w-full flex items-center justify-between p-3.5 text-left hover:bg-surface-2/50 transition-colors"
-                  >
+                <div key={record.blockId + record.dateClosed} className="rounded-xl border border-border bg-surface-2/30 overflow-hidden transition-all">
+                  <button type="button" onClick={() => setOpenIndex(isOpen ? null : idx)} className="w-full flex items-center justify-between p-3.5 text-left hover:bg-surface-2/50 transition-colors">
                     <div className="space-y-0.5">
                       <p className="text-xs font-bold text-foreground">{record.blockName}</p>
                       <p className="text-[10px] text-muted-foreground">Closed {record.dateClosed}</p>
@@ -383,15 +377,9 @@ function ArchiveModal({
                           <p className="stat-label text-center">Baseline</p>
                           <div className="aspect-[3/4] overflow-hidden rounded-lg border border-border bg-surface-2">
                             {angleData.baseline ? (
-                              <img
-                                src={angleData.baseline}
-                                alt="Baseline"
-                                className="size-full object-cover"
-                              />
+                              <img src={angleData.baseline} alt="Baseline" className="size-full object-cover" />
                             ) : (
-                              <div className="grid size-full place-items-center text-[10px] text-muted-foreground">
-                                No Photo
-                              </div>
+                              <div className="grid size-full place-items-center text-[10px] text-muted-foreground">No Photo</div>
                             )}
                           </div>
                         </div>
@@ -400,15 +388,9 @@ function ArchiveModal({
                           <p className="stat-label text-center">Final Result</p>
                           <div className="aspect-[3/4] overflow-hidden rounded-lg border border-border bg-surface-2">
                             {angleData.final ? (
-                              <img
-                                src={angleData.final}
-                                alt="Final"
-                                className="size-full object-cover"
-                              />
+                              <img src={angleData.final} alt="Final" className="size-full object-cover" />
                             ) : (
-                              <div className="grid size-full place-items-center text-[10px] text-muted-foreground">
-                                No Photo
-                              </div>
+                              <div className="grid size-full place-items-center text-[10px] text-muted-foreground">No Photo</div>
                             )}
                           </div>
                         </div>
