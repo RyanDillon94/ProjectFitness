@@ -22,8 +22,8 @@ export type TopExercise = {
 export type MuscleGroupSummary = {
   strengthChange: number;
   volumeChange: number;
-  currentVolume: number; // Direct primary sets completed
-  baselineVolume: number; // Baseline primary sets completed
+  currentVolume: number; // Sets completed in the last 7 days
+  baselineVolume: number; // Average weekly sets over the last 28 days
   topExercises: TopExercise[];
 };
 
@@ -41,22 +41,22 @@ export function calculateE1RM(weight: number, reps: number): number {
 }
 
 export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
-  // Normalize current timestamp to the end of today to avoid partial day cutoffs
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
   const now = endOfToday.getTime();
 
   const MS_PER_DAY = 86_400_000;
-  // Clean continuous 28-day rolling windows
-  const currentWindowStart = now - (28 * MS_PER_DAY); // Days 0-28 (Current)
-  const baselineWindowStart = now - (56 * MS_PER_DAY); // Days 29-56 (Baseline)
+  
+  // Acute window: Last 7 days
+  const acuteWindowStart = now - (7 * MS_PER_DAY);
+  // Chronic baseline window: Trailing 28 days
+  const chronicWindowStart = now - (28 * MS_PER_DAY);
 
   const validSets = sets.filter((s) => {
     if (!s || s.weight <= 0 || s.reps <= 0) return false;
-    // Normalize set date to local midnight
     const parts = s.date.split("-").map(Number);
     const time = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).getTime();
-    return !isNaN(time) && time >= baselineWindowStart && time <= now;
+    return !isNaN(time) && time >= chronicWindowStart && time <= now;
   });
 
   if (validSets.length === 0) {
@@ -84,30 +84,18 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
       muscle: MuscleGroup;
       baseE1rm: number;
       recentE1rm: number;
-      baseSets: number;
-      recentSets: number;
+      acuteSets: number;
+      chronicSets: number;
       recentDates: Set<string>;
     }
   > = new Map();
 
-  const muscleSetsCurrent: Record<MuscleGroup, number> = {
-    Chest: 0,
-    Back: 0,
-    Shoulders: 0,
-    Biceps: 0,
-    Triceps: 0,
-    Legs: 0,
+  const acuteSetsPerMuscle: Record<MuscleGroup, number> = {
+    Chest: 0, Back: 0, Shoulders: 0, Biceps: 0, Triceps: 0, Legs: 0,
   };
-  const muscleSetsBase: Record<MuscleGroup, number> = {
-    Chest: 0,
-    Back: 0,
-    Shoulders: 0,
-    Biceps: 0,
-    Triceps: 0,
-    Legs: 0,
+  const chronicSetsPerMuscle: Record<MuscleGroup, number> = {
+    Chest: 0, Back: 0, Shoulders: 0, Biceps: 0, Triceps: 0, Legs: 0,
   };
-  let totalSetsBase = 0;
-  let totalSetsCurrent = 0;
 
   validSets.forEach((s) => {
     const muscle = getMuscleGroupForExercise(s.exerciseName);
@@ -116,32 +104,30 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
     const parts = s.date.split("-").map(Number);
     const time = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).getTime();
     const e1rm = calculateE1RM(s.weight, s.reps);
-    const isRecent = time >= currentWindowStart;
+    const isAcute = time >= acuteWindowStart;
 
     if (!exerciseComparison.has(s.exerciseName)) {
       exerciseComparison.set(s.exerciseName, {
         muscle,
         baseE1rm: 0,
         recentE1rm: 0,
-        baseSets: 0,
-        recentSets: 0,
+        acuteSets: 0,
+        chronicSets: 0,
         recentDates: new Set(),
       });
     }
 
     const entry = exerciseComparison.get(s.exerciseName)!;
+    entry.chronicSets += 1;
+    chronicSetsPerMuscle[muscle] += 1;
 
-    if (isRecent) {
-      entry.recentSets += 1;
+    if (isAcute) {
+      entry.acuteSets += 1;
       entry.recentDates.add(s.date);
+      acuteSetsPerMuscle[muscle] += 1;
       if (e1rm > entry.recentE1rm) entry.recentE1rm = e1rm;
-      muscleSetsCurrent[muscle] += 1;
-      totalSetsCurrent += 1;
     } else {
-      entry.baseSets += 1;
       if (e1rm > entry.baseE1rm) entry.baseE1rm = e1rm;
-      muscleSetsBase[muscle] += 1;
-      totalSetsBase += 1;
     }
   });
 
@@ -161,7 +147,7 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
     let exChange = 0;
     if (data.baseE1rm > 0 && data.recentE1rm > 0) {
       exChange = ((data.recentE1rm - data.baseE1rm) / data.baseE1rm) * 100;
-      const weight = data.recentSets + data.baseSets;
+      const weight = data.acuteSets + data.chronicSets;
 
       muscleStrengthChanges[data.muscle].totalWeightedChange += exChange * weight;
       muscleStrengthChanges[data.muscle].totalWeight += weight;
@@ -169,14 +155,13 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
       exChange = 100;
     }
 
-    // Only surface exercises performed across at least 2 distinct days
-    if (data.recentSets > 0 && data.recentDates.size >= 2) {
+    if (data.acuteSets > 0) {
       muscleStrengthChanges[data.muscle].exercises.push({
         exerciseName,
         currentE1RM: data.recentE1rm,
-        baselineE1RM: data.baseE1rm,
+        baselineE1RM: data.baseE1rm > 0 ? data.baseE1rm : data.recentE1rm,
         percentChange: Math.round(exChange * 10) / 10,
-        currentSets: data.recentSets,
+        currentSets: data.acuteSets,
       });
     }
   });
@@ -187,7 +172,9 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
     return Math.round(((current - base) / base) * 1000) / 10;
   };
 
-  const overallVolumeChange = calcChange(totalSetsCurrent, totalSetsBase);
+  const totalAcuteSets = Object.values(acuteSetsPerMuscle).reduce((a, b) => a + b, 0);
+  const totalChronicAvg = Object.values(chronicSetsPerMuscle).reduce((a, b) => a + b, 0) / 4;
+  const overallVolumeChange = calcChange(totalAcuteSets, totalChronicAvg);
 
   const muscleGroupSummaries = {} as Record<MuscleGroup, MuscleGroupSummary>;
   let overallWeightedStrengthChange = 0;
@@ -200,11 +187,11 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
         ? Math.round((mData.totalWeightedChange / mData.totalWeight) * 10) / 10
         : 0;
 
-    const vBase = muscleSetsBase[group];
-    const vCurrent = muscleSetsCurrent[group];
-    const volumeChange = calcChange(vCurrent, vBase);
+    const currentSets = acuteSetsPerMuscle[group];
+    // Baseline is the trailing 4-week average (chronic / 4)
+    const avgWeeklySets = Math.round((chronicSetsPerMuscle[group] / 4) * 10) / 10;
+    const volumeChange = calcChange(currentSets, avgWeeklySets);
 
-    // Rank top exercises by direct working sets completed
     const topExercises = mData.exercises
       .sort((a, b) => b.currentSets - a.currentSets)
       .slice(0, 3);
@@ -212,12 +199,11 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
     muscleGroupSummaries[group] = {
       strengthChange,
       volumeChange,
-      currentVolume: vCurrent,
-      baselineVolume: vBase,
+      currentVolume: currentSets,
+      baselineVolume: avgWeeklySets,
       topExercises,
     };
 
-    // Exclude arm isolations from overall compound strength score
     if (mData.totalWeight > 0 && group !== "Biceps" && group !== "Triceps") {
       overallWeightedStrengthChange += mData.totalWeightedChange;
       overallStrengthWeight += mData.totalWeight;
