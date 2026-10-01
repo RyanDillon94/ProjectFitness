@@ -19,7 +19,6 @@ import {
   Maximize2,
   Trash2,
   X,
-  AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -45,7 +44,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
 
   const activeAnglePhotos = photos?.[selectedAngle] || { baseline: null, current: null };
 
-  // Listen for the pending requirement flag
   useEffect(() => {
     const checkPending = () => {
       setIsPhotoPending(localStorage.getItem("p35_photo_checkpoint_pending") === "true");
@@ -72,7 +70,7 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
       {
         onSuccess: () => {
           toast.success(
-            `${pending.current === "baseline" ? "Baseline" : "Current"} (${selectedAngle.toUpperCase()}) saved.`,
+            `${pending.current === "baseline" ? "Baseline" : "Current"} (${selectedAngle.toUpperCase()}) saved.`
           );
 
           const currentProgramWeek = getProgramWeekNumber(new Date());
@@ -86,7 +84,7 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         },
         onError: (error) =>
           toast.error(error instanceof Error ? error.message : "Upload failed."),
-      },
+      }
     );
   };
 
@@ -108,7 +106,7 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
       {
         onSuccess: () => toast.success("Block closed! Baseline populated for next block."),
         onError: () => toast.error("Could not archive block photos."),
-      },
+      }
     );
   };
 
@@ -118,8 +116,7 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   ];
 
   return (
-    // FIX: Flashes amber when overdue, reverts to perfectly standard panel otherwise
-    <section className={`panel p-5 space-y-4 transition-all duration-500 ${isPhotoPending ? "border-amber-500/50 bg-amber-500/5 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.15)]" : ""}`}>
+    <section className={`panel p-5 space-y-4 transition-all duration-500 ${isPhotoPending ? "border-amber-500/60 bg-amber-500/5 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Camera className={`size-5 transition-colors ${isPhotoPending ? "text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]" : "text-primary"}`} />
@@ -210,7 +207,33 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => removePhoto.mutate({ angle: selectedAngle, slot })}
+                      onClick={() => {
+                        removePhoto.mutate(
+                          { angle: selectedAngle, slot },
+                          {
+                            onSuccess: () => {
+                              if (slot === "current") {
+                                // Check if any OTHER current photos exist across the angles
+                                const hasOtherCurrent = ANGLES.some(
+                                  (a) => a.id !== selectedAngle && photos?.[a.id]?.current
+                                );
+
+                                // If this was the last photo, revert the cleared flags
+                                if (!hasOtherCurrent) {
+                                  const currentProgramWeek = getProgramWeekNumber(new Date());
+                                  localStorage.removeItem(`p35_photo_cleared_week_${currentProgramWeek}`);
+                                  
+                                  if (currentProgramWeek % 4 === 0) {
+                                    localStorage.setItem("p35_photo_checkpoint_pending", "true");
+                                    setIsPhotoPending(true);
+                                    window.dispatchEvent(new Event("p35-photo-pending-updated"));
+                                  }
+                                }
+                              }
+                            },
+                          }
+                        );
+                      }}
                       aria-label={`Delete ${label}`}
                       className="rounded p-1 text-muted-foreground transition-colors hover:text-destructive"
                     >
