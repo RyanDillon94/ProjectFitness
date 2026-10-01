@@ -163,7 +163,6 @@ export function FinaliseWeekBanner({ userId }: { userId: string | null }) {
     const isSunday = dayOfWeek === 0;
     const isMonday = dayOfWeek === 1;
 
-    // Determine which week we are evaluating
     let evaluationDateObj = realTodayObj;
     if (isMonday) {
       evaluationDateObj = new Date(realTodayObj.getTime() - 24 * 60 * 60 * 1000);
@@ -452,7 +451,6 @@ Do NOT output any empty bullet points. Do NOT alter the headers.`;
     const lockDateStr = summaryData.evaluationDateStr;
     const currentWeekNumber = getProgramWeekNumber(new Date(lockDateStr + "T00:00:00Z"));
     
-    // Determine if we need to set a persistent flag for missing photos
     const isCleared = localStorage.getItem(`p35_photo_cleared_week_${currentWeekNumber}`) === "true";
     if (currentWeekNumber % 4 === 0 && !isCleared) {
       localStorage.setItem("p35_photo_checkpoint_pending", "true");
@@ -465,7 +463,6 @@ Do NOT output any empty bullet points. Do NOT alter the headers.`;
     const mondayKey = getMondayKeyForDate(lockDateStr);
     const formatShortDate = (dStr: string) => new Date(dStr).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" });
 
-    // FIX: Filter out previous week archives to prevent a recursive storage explosion
     const fullBackupData: Record<string, string> = {};
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -488,19 +485,16 @@ Do NOT output any empty bullet points. Do NOT alter the headers.`;
       fullLocalStorageSnapshot: fullBackupData,
     };
 
-    // FIX: Wrap the lock-in explicitly so if limits are hit, it gracefully falls back
     try {
       localStorage.setItem(weekKey, JSON.stringify(weekArchiveRecord));
       localStorage.setItem("p35_last_locked_week", lockDateStr);
     } catch (err) {
       console.warn("Storage quota exceeded. Saving without full snapshot.", err);
-      // If Hevy cache is too massive, drop the snapshot and try again so the week still successfully locks.
       delete (weekArchiveRecord as any).fullLocalStorageSnapshot;
       localStorage.setItem(weekKey, JSON.stringify(weekArchiveRecord));
       localStorage.setItem("p35_last_locked_week", lockDateStr);
     }
 
-    // FIX: Decouple the cloud backup from the local state updates so a network fail doesn't break the UI
     try {
       await triggerFridayBackup(lockDateStr);
     } catch (err) {
@@ -564,12 +558,19 @@ Do NOT output any empty bullet points. Do NOT alter the headers.`;
             </DialogHeader>
 
             <div className="space-y-4 pt-2">
+              {/* NEW GLOWING MODAL BANNER */}
               {showPhotoBanner && (
-                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-3">
+                <div className={`rounded-lg border p-3 flex items-start gap-3 transition-colors ${summaryData.isPhotoPending ? "border-amber-500/50 bg-amber-500/5 animate-pulse" : "border-amber-500/40 bg-amber-500/10"}`}>
                   <Camera className="size-5 text-amber-500 shrink-0 mt-0.5" />
                   <div className="text-xs space-y-1">
-                    <p className="font-semibold text-amber-500">4-Week Photo Checkpoint Due</p>
-                    <p className="text-muted-foreground">This is your 4-week rotation marker. Upload your checkpoint photos in the Photos module to clear this requirement.</p>
+                    <p className="font-semibold text-amber-500">
+                      {summaryData.isPhotoPending ? "Outstanding Photo Checkpoint" : "4-Week Photo Checkpoint Due"}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {summaryData.isPhotoPending 
+                        ? "You locked in without uploading photos. Upload your checkpoint photos in the Photos module to clear this requirement." 
+                        : "This is your 4-week rotation marker. Upload your checkpoint photos in the Photos module to clear this requirement."}
+                    </p>
                   </div>
                 </div>
               )}
