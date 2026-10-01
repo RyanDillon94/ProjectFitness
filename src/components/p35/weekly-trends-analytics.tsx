@@ -219,7 +219,11 @@ export function WeeklyTrendsAnalytics() {
             </div>
 
             <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Rolling Weekly Adherence</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Training Momentum (7d vs 4-Wk Avg)</p>
+<p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+  Volume and strength reflect the last 7 days compared against your rolling 4-week baseline.
+</p>
+
               <div className="space-y-3 pt-1">
                 {trendData.map((week, idx) => (
                   <div key={idx} className="space-y-1">
