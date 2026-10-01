@@ -15,6 +15,81 @@ import { CalendarCheck, Camera, Loader2, Sparkles, Trophy, Check, AlertCircle } 
 import { toast } from "sonner";
 import { getMondayKeyForDate } from "./WeeklyProtocolCard";
 
+// ============================================================
+// GEMINI MODEL CONFIGURATION
+// ============================================================
+const PREFERRED_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+];
+
+const modelDiscoveryCache = new Map<string, Promise<string[]>>();
+
+function isUsableModel(model: string): boolean {
+  const lower = model.toLowerCase();
+  const excludedPatterns = ["embedding", "image", "imagen", "live", "tts", "transcribe", "robotics", "veo"];
+  return !excludedPatterns.some((pattern) => lower.includes(pattern));
+}
+
+function rankModels(availableModels: string[]): string[] {
+  const usableModels = availableModels.filter(isUsableModel);
+  const preferred = PREFERRED_MODELS.filter((model) => usableModels.includes(model));
+  const otherModels = usableModels.filter((model) => !PREFERRED_MODELS.includes(model));
+  return [...preferred, ...otherModels];
+}
+
+async function getAvailableModels(apiKey: string): Promise<string[]> {
+  const availableModels: { baseModelId?: string; name?: string; supportedGenerationMethods?: string[] }[] = [];
+  let pageToken = "";
+
+  do {
+    const query = new URLSearchParams({ key: apiKey, pageSize: "1000" });
+    if (pageToken) query.set("pageToken", pageToken);
+
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?${query.toString()}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error?.message || "Unable to list models.");
+
+    if (Array.isArray(data.models)) availableModels.push(...data.models);
+    pageToken = data.nextPageToken || "";
+  } while (pageToken);
+
+  const modelIds = availableModels
+    .filter((model) => Array.isArray(model.supportedGenerationMethods) && model.supportedGenerationMethods.includes("generateContent"))
+    .map((model) => model.baseModelId || (model.name ? model.name.replace(/^models\//, "") : ""))
+    .filter(Boolean);
+
+  return Array.from(new Set(modelIds));
+}
+
+function getCachedAvailableModels(apiKey: string): Promise<string[]> {
+  const cached = modelDiscoveryCache.get(apiKey);
+  if (cached) return cached;
+
+  const promise = getAvailableModels(apiKey)
+    .catch((error) => {
+      modelDiscoveryCache.delete(apiKey);
+      throw error;
+    });
+
+  modelDiscoveryCache.set(apiKey, promise);
+  return promise;
+}
+// ============================================================
+
 function getCoachSystemPrompt() {
   const { activePhase, activeBlock } = getActiveBlockDetails();
 
@@ -276,7 +351,7 @@ export function FinaliseWeekBanner({ userId }: { userId: string | null }) {
   const generateAiSummary = async () => {
     if (!summaryData) return;
     
-    const apiKey = localStorage.getItem("p35_gemini_api_key");
+    const apiKey = localStorage.getItem("p35_gemini_api_key")?.replace(/\s+/g, "");
     if (!apiKey) {
       toast.error("Add your Gemini API key first.");
       setLoadingAi(false);
@@ -311,24 +386,59 @@ You MUST structure your response EXACTLY with these four markdown headers and no
 **Next Action**
 Do NOT output any empty bullet points. Do NOT alter the headers.`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: `${getCoachSystemPrompt()}\n\nATHLETE PROFILE & LIVE METRICS:\n${contextBundle}` }] },
-          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        }),
-      });
+      const payload = {
+        systemInstruction: { parts: [{ text: `${getCoachSystemPrompt()}\n\nATHLETE PROFILE & LIVE METRICS:\n${contextBundle}` }] },
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        generationConfig: { temperature: 0.7 },
+      };
 
-      if (!res.ok) throw new Error("Gemini request failed");
+      const availableModels = await getCachedAvailableModels(apiKey);
+      if (availableModels.length === 0) throw new Error("No Gemini models available.");
+      
+      const rankedModels = rankModels(availableModels);
+      if (rankedModels.length === 0) throw new Error("No usable Gemini text models available.");
 
-      const data = await res.json();
-      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!reply) throw new Error("No response generated.");
+      let replyText = "";
+      let lastError = "";
+
+      for (const model of rankedModels) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            replyText = data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("").trim() || "";
+            if (replyText) {
+              console.log(`Synthesis generated using ${model}`);
+              break;
+            }
+          } else {
+             if (res.status === 404 || res.status === 400) {
+               const cachedPromise = modelDiscoveryCache.get(apiKey);
+               if (cachedPromise) {
+                   cachedPromise.then((cachedModels) => {
+                       modelDiscoveryCache.set(apiKey, Promise.resolve(cachedModels.filter((m) => m !== model)));
+                   }).catch(() => {});
+               }
+             }
+             lastError = data.error?.message || `HTTP ${res.status}`;
+             console.warn(`Model ${model} failed:`, lastError);
+          }
+        } catch (err) {
+          lastError = err instanceof Error ? err.message : "Network error";
+          console.warn(`Model ${model} threw error:`, lastError);
+        }
+      }
+
+      if (!replyText) throw new Error(`Synthesis generation failed. Last error: ${lastError}`);
 
       setHasGenerated(true);
-      setSummaryData((prev) => (prev ? { ...prev, aiSummary: reply.trim() } : null));
+      setSummaryData((prev) => (prev ? { ...prev, aiSummary: replyText } : null));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to generate AI weekly summary.");
     } finally {
