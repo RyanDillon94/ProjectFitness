@@ -134,17 +134,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
           <Camera className={`size-5 transition-colors ${isOverdue ? "text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]" : "text-primary"}`} />
           <h2 className="text-lg font-bold">Photo Checkpoint</h2>
           {upload.isPending && <Loader2 className="size-4 animate-spin text-primary" />}
-<Button 
-  variant="destructive" 
-  size="sm" 
-  onClick={() => {
-    localStorage.removeItem("p35_photo_checkpoint_pending");
-    localStorage.removeItem("p35_photo_was_pending_debt");
-    window.location.reload();
-  }}
->
-  NUKE GHOST DEBT
-</Button>
 
         </div>
 
