@@ -1,5 +1,4 @@
 import {
-  getExerciseTargets,
   getMuscleGroupForExercise,
   MuscleGroup,
   MUSCLE_GROUPS,
@@ -23,8 +22,8 @@ export type TopExercise = {
 export type MuscleGroupSummary = {
   strengthChange: number;
   volumeChange: number;
-  currentVolume: number; // Total effective sets
-  baselineVolume: number; // Baseline effective sets
+  currentVolume: number; // Direct primary sets completed
+  baselineVolume: number; // Baseline primary sets completed
   topExercises: TopExercise[];
 };
 
@@ -41,32 +40,22 @@ export function calculateE1RM(weight: number, reps: number): number {
   return Math.round(weight * (1 + reps / 30) * 10) / 10;
 }
 
-function getMuscleCredits(exerciseName: string): { muscle: MuscleGroup; credit: number }[] {
-  const target = getExerciseTargets(exerciseName);
-  if (!target) return [];
-
-  const credits: { muscle: MuscleGroup; credit: number }[] = [
-    { muscle: target.primary, credit: 1.0 },
-  ];
-
-  if (target.secondary) {
-    credits.push({ muscle: target.secondary, credit: 0.5 });
-  }
-
-  return credits;
-}
-
 export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
-  const now = new Date().getTime();
-  const MS_PER_DAY = 86_400_000;
+  // Normalize current timestamp to the end of today to avoid partial day cutoffs
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  const now = endOfToday.getTime();
 
-  // Continuous 28-day rolling windows
-  const currentWindowStart = now - 28 * MS_PER_DAY; // Days 0-28 (Current)
-  const baselineWindowStart = now - 56 * MS_PER_DAY; // Days 29-56 (Baseline)
+  const MS_PER_DAY = 86_400_000;
+  // Clean continuous 28-day rolling windows
+  const currentWindowStart = now - (28 * MS_PER_DAY); // Days 0-28 (Current)
+  const baselineWindowStart = now - (56 * MS_PER_DAY); // Days 29-56 (Baseline)
 
   const validSets = sets.filter((s) => {
     if (!s || s.weight <= 0 || s.reps <= 0) return false;
-    const time = new Date(s.date).getTime();
+    // Normalize set date to local midnight
+    const parts = s.date.split("-").map(Number);
+    const time = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).getTime();
     return !isNaN(time) && time >= baselineWindowStart && time <= now;
   });
 
@@ -92,7 +81,7 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   const exerciseComparison: Map<
     string,
     {
-      primaryMuscle: MuscleGroup;
+      muscle: MuscleGroup;
       baseE1rm: number;
       recentE1rm: number;
       baseSets: number;
@@ -121,17 +110,17 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   let totalSetsCurrent = 0;
 
   validSets.forEach((s) => {
-    const credits = getMuscleCredits(s.exerciseName);
-    if (credits.length === 0) return;
+    const muscle = getMuscleGroupForExercise(s.exerciseName);
+    if (!muscle) return;
 
-    const primaryMuscle = credits[0].muscle;
-    const time = new Date(s.date).getTime();
+    const parts = s.date.split("-").map(Number);
+    const time = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).getTime();
     const e1rm = calculateE1RM(s.weight, s.reps);
     const isRecent = time >= currentWindowStart;
 
     if (!exerciseComparison.has(s.exerciseName)) {
       exerciseComparison.set(s.exerciseName, {
-        primaryMuscle,
+        muscle,
         baseE1rm: 0,
         recentE1rm: 0,
         baseSets: 0,
@@ -146,21 +135,14 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
       entry.recentSets += 1;
       entry.recentDates.add(s.date);
       if (e1rm > entry.recentE1rm) entry.recentE1rm = e1rm;
+      muscleSetsCurrent[muscle] += 1;
+      totalSetsCurrent += 1;
     } else {
       entry.baseSets += 1;
       if (e1rm > entry.baseE1rm) entry.baseE1rm = e1rm;
+      muscleSetsBase[muscle] += 1;
+      totalSetsBase += 1;
     }
-
-    // Allocate hard set credits (1.0 for primary, 0.5 for synergist)
-    credits.forEach(({ muscle, credit }) => {
-      if (isRecent) {
-        muscleSetsCurrent[muscle] += credit;
-        totalSetsCurrent += credit;
-      } else {
-        muscleSetsBase[muscle] += credit;
-        totalSetsBase += credit;
-      }
-    });
   });
 
   const muscleStrengthChanges: Record<
@@ -181,16 +163,15 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
       exChange = ((data.recentE1rm - data.baseE1rm) / data.baseE1rm) * 100;
       const weight = data.recentSets + data.baseSets;
 
-      muscleStrengthChanges[data.primaryMuscle].totalWeightedChange += exChange * weight;
-      muscleStrengthChanges[data.primaryMuscle].totalWeight += weight;
+      muscleStrengthChanges[data.muscle].totalWeightedChange += exChange * weight;
+      muscleStrengthChanges[data.muscle].totalWeight += weight;
     } else if (data.baseE1rm === 0 && data.recentE1rm > 0) {
-      // New exercise introduced in the current window
       exChange = 100;
     }
 
-    // Include in top exercises only if performed across at least 2 distinct days
+    // Only surface exercises performed across at least 2 distinct days
     if (data.recentSets > 0 && data.recentDates.size >= 2) {
-      muscleStrengthChanges[data.primaryMuscle].exercises.push({
+      muscleStrengthChanges[data.muscle].exercises.push({
         exerciseName,
         currentE1RM: data.recentE1rm,
         baselineE1RM: data.baseE1rm,
@@ -231,12 +212,12 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
     muscleGroupSummaries[group] = {
       strengthChange,
       volumeChange,
-      currentVolume: Math.round(vCurrent * 10) / 10,
-      baselineVolume: Math.round(vBase * 10) / 10,
+      currentVolume: vCurrent,
+      baselineVolume: vBase,
       topExercises,
     };
 
-    // Exclude smaller isolation groups from global strength metric to avoid skewing
+    // Exclude arm isolations from overall compound strength score
     if (mData.totalWeight > 0 && group !== "Biceps" && group !== "Triceps") {
       overallWeightedStrengthChange += mData.totalWeightedChange;
       overallStrengthWeight += mData.totalWeight;
