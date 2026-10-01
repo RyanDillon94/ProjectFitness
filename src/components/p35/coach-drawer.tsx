@@ -47,6 +47,26 @@ const COACH_NAME = IS_PROJECT_35 ? "Coach Clive" : "Coach Neil is Gay";
 type Msg = CoachMsg;
 
 // ============================================================
+// PERFORMANCE SETTINGS
+// ============================================================
+//
+// Workout history is still retained in localStorage in full.
+// Only this much history is sent to Gemini.
+//
+// Change 7 -> 5 if you want an even smaller context window.
+//
+
+const WORKOUT_HISTORY_DAYS = 7;
+
+// Recently rate-limited models are skipped for this long on
+// subsequent requests. We NEVER wait for Google's retry delay.
+const MODEL_COOLDOWN_MS = 60_000;
+
+// Prevent a genuinely hanging model request from blocking the
+// fallback chain indefinitely.
+const MODEL_REQUEST_TIMEOUT_MS = 12_000;
+
+// ============================================================
 // AI COACH SYSTEM INSTRUCTIONS
 // ============================================================
 
@@ -127,11 +147,11 @@ WORKOUT HISTORY RULES:
 // PREFERRED GEMINI MODELS
 // ============================================================
 //
-// The model catalogue is discovered ONCE per API key and then
-// cached for the lifetime of this page session.
+// These remain in the exact preferred fallback order.
 //
-// This removes a full Google model-list request from every
-// single coach message.
+// If one hits a quota/rate limit, the request immediately
+// moves to the next model. It does NOT wait for Google's
+// suggested retry interval.
 //
 
 const PREFERRED_MODELS = [
@@ -163,12 +183,104 @@ const modelDiscoveryCache =
   new Map<string, Promise<string[]>>();
 
 // ============================================================
+// GEMINI MODEL COOLDOWN CACHE
+// ============================================================
+//
+// This is separate from model discovery.
+//
+// If a model returns 429/rate-limit/quota, we mark only THAT
+// model as temporarily unavailable.
+//
+// Future requests skip it automatically.
+// We never wait for Google's retry-after period.
+//
+
+const modelCooldownCache =
+  new Map<string, Map<string, number>>();
+
+function markModelCooldown(
+  apiKey: string,
+  model: string,
+): void {
+  let keyCooldowns =
+    modelCooldownCache.get(
+      apiKey,
+    );
+
+  if (!keyCooldowns) {
+    keyCooldowns =
+      new Map<string, number>();
+
+    modelCooldownCache.set(
+      apiKey,
+      keyCooldowns,
+    );
+  }
+
+  keyCooldowns.set(
+    model,
+    Date.now() + MODEL_COOLDOWN_MS,
+  );
+}
+
+function clearModelCooldown(
+  apiKey: string,
+  model: string,
+): void {
+  modelCooldownCache
+    .get(apiKey)
+    ?.delete(model);
+}
+
+function isModelCoolingDown(
+  apiKey: string,
+  model: string,
+): boolean {
+  const keyCooldowns =
+    modelCooldownCache.get(
+      apiKey,
+    );
+
+  if (!keyCooldowns) {
+    return false;
+  }
+
+  const expiresAt =
+    keyCooldowns.get(
+      model,
+    );
+
+  if (!expiresAt) {
+    return false;
+  }
+
+  if (
+    Date.now() >=
+    expiresAt
+  ) {
+    keyCooldowns.delete(
+      model,
+    );
+
+    return false;
+  }
+
+  return true;
+}
+
+// ============================================================
 // HEVY HISTORY CACHE
 // ============================================================
 //
 // localStorage parsing is cached against the raw stored string.
 // If Hevy changes the stored data, the raw string changes and
 // the cache automatically refreshes.
+//
+// IMPORTANT:
+// We do NOT delete older workouts from localStorage.
+// The app keeps the full history locally.
+//
+// We simply limit what is sent to Gemini.
 //
 
 let hevyHistoryRawCache: string | null = null;
@@ -182,7 +294,8 @@ function isCardioExercise(
   exerciseTitle: string,
   sets: any[],
 ): boolean {
-  const title = exerciseTitle.toLowerCase();
+  const title =
+    exerciseTitle.toLowerCase();
 
   const cardioKeywords = [
     "walk",
@@ -198,36 +311,49 @@ function isCardioExercise(
     "wrestling",
   ];
 
-  const matchesKeyword = cardioKeywords.some((k) =>
-    title.includes(k),
-  );
+  const matchesKeyword =
+    cardioKeywords.some((k) =>
+      title.includes(k),
+    );
 
-  const hasCardioMetrics = sets.some(
-    (s) =>
-      s.distance_meters != null ||
-      s.distanceMeters != null ||
-      s.duration_seconds != null ||
-      s.durationSeconds != null ||
-      s.km != null ||
-      (s.weightKg == null &&
-        s.weight_kg == null &&
-        s.weightLbs == null &&
-        s.reps == null),
-  );
+  const hasCardioMetrics =
+    sets.some(
+      (s) =>
+        s.distance_meters !=
+          null ||
+        s.distanceMeters !=
+          null ||
+        s.duration_seconds !=
+          null ||
+        s.durationSeconds !=
+          null ||
+        s.km != null ||
+        (s.weightKg == null &&
+          s.weight_kg == null &&
+          s.weightLbs == null &&
+          s.reps == null),
+    );
 
-  return matchesKeyword || hasCardioMetrics;
+  return (
+    matchesKeyword ||
+    hasCardioMetrics
+  );
 }
 
 // ============================================================
 // CARDIO FORMATTER
 // ============================================================
 
-function formatCardio(s: any): string {
+function formatCardio(
+  s: any,
+): string {
   const meters =
     s.distance_meters ??
     s.distanceMeters ??
     s.distance ??
-    (s.km != null ? s.km * 1000 : null);
+    (s.km != null
+      ? s.km * 1000
+      : null);
 
   const kmString =
     meters != null
@@ -240,12 +366,27 @@ function formatCardio(s: any): string {
     s.duration ??
     s.time;
 
-  let timeString: string | null = null;
+  let timeString:
+    | string
+    | null = null;
 
-  if (typeof totalSec === "number") {
-    const hrs = Math.floor(totalSec / 3600);
-    const mins = Math.floor((totalSec % 3600) / 60);
-    const secs = totalSec % 60;
+  if (
+    typeof totalSec ===
+    "number"
+  ) {
+    const hrs =
+      Math.floor(
+        totalSec / 3600,
+      );
+
+    const mins =
+      Math.floor(
+        (totalSec % 3600) /
+          60,
+      );
+
+    const secs =
+      totalSec % 60;
 
     if (hrs > 0) {
       timeString = `${hrs}h ${mins}min`;
@@ -254,11 +395,18 @@ function formatCardio(s: any): string {
     } else {
       timeString = `${secs}s`;
     }
-  } else if (typeof totalSec === "string") {
-    timeString = totalSec;
+  } else if (
+    typeof totalSec ===
+    "string"
+  ) {
+    timeString =
+      totalSec;
   }
 
-  const parts = [timeString, kmString].filter(Boolean);
+  const parts = [
+    timeString,
+    kmString,
+  ].filter(Boolean);
 
   return parts.length > 0
     ? parts.join(" • ")
@@ -283,13 +431,22 @@ function formatWeight(
     return "BW";
   }
 
-  const titleLower = exerciseTitle.toLowerCase();
+  const titleLower =
+    exerciseTitle.toLowerCase();
 
   const isCableOrLbs =
-    (titleLower.includes("cable") &&
-      !titleLower.includes("lat pulldown")) ||
-    titleLower.includes("pushdown") ||
-    titleLower.includes("fly");
+    (titleLower.includes(
+      "cable",
+    ) &&
+      !titleLower.includes(
+        "lat pulldown",
+      )) ||
+    titleLower.includes(
+      "pushdown",
+    ) ||
+    titleLower.includes(
+      "fly",
+    );
 
   if (
     s.weightLbs != null ||
@@ -300,7 +457,8 @@ function formatWeight(
       s.weight_lbs;
 
     const snapped =
-      Math.round(val * 2) / 2;
+      Math.round(val * 2) /
+      2;
 
     return `${snapped}lbs`;
   }
@@ -310,15 +468,21 @@ function formatWeight(
       rawWeight * 2.20462;
 
     const snappedLbs =
-      Math.round(rawLbs * 2) / 2;
+      Math.round(
+        rawLbs * 2,
+      ) / 2;
 
     return `${snappedLbs}lbs`;
   }
 
   const roundedKg =
-    Number.isInteger(rawWeight)
+    Number.isInteger(
+      rawWeight,
+    )
       ? rawWeight
-      : Math.round(rawWeight * 10) / 10;
+      : Math.round(
+          rawWeight * 10,
+        ) / 10;
 
   return `${roundedKg}kg`;
 }
@@ -327,21 +491,24 @@ function formatWeight(
 // STORED HEVY HISTORY
 // ============================================================
 
-type StoredHevyWorkout = HevyWorkout & {
-  id?: string;
-};
+type StoredHevyWorkout =
+  HevyWorkout & {
+    id?: string;
+  };
 
 function hashString(
   input: string,
 ): string {
-  let hash = 2166136261;
+  let hash =
+    2166136261;
 
   for (
     let i = 0;
     i < input.length;
     i++
   ) {
-    hash ^= input.charCodeAt(i);
+    hash ^= input.charCode(i);
+
     hash = Math.imul(
       hash,
       16777619,
@@ -363,18 +530,25 @@ function getWorkoutId(
       title:
         workout.title
           ?.trim()
-          .toLowerCase() ?? "",
+          .toLowerCase() ??
+        "",
+
       startTime:
-        workout.startTime ?? "",
+        workout.startTime ??
+        "",
+
       exercises:
         workout.exercises.map(
           (ex) => ({
             title:
               ex.title
                 ?.trim()
-                .toLowerCase() ?? "",
+                .toLowerCase() ??
+              "",
+
             notes:
               ex.notes ?? "",
+
             sets:
               ex.sets.map(
                 (s: any) => ({
@@ -382,20 +556,25 @@ function getWorkoutId(
                     s.weightKg ??
                     s.weight_kg ??
                     null,
+
                   weightLbs:
                     s.weightLbs ??
                     s.weight_lbs ??
                     null,
+
                   reps:
                     s.reps ??
                     null,
+
                   rpe:
                     s.rpe ??
                     null,
+
                   distance_meters:
                     s.distance_meters ??
                     s.distanceMeters ??
                     null,
+
                   duration_seconds:
                     s.duration_seconds ??
                     s.durationSeconds ??
@@ -417,7 +596,9 @@ function parseWorkoutDate(
     | null
     | undefined,
 ): number {
-  if (!rawDate) return 0;
+  if (!rawDate) {
+    return 0;
+  }
 
   const value =
     rawDate.trim();
@@ -475,8 +656,12 @@ function getStoredHevyHistory(): StoredHevyWorkout[] {
       );
 
     if (!raw) {
-      hevyHistoryRawCache = null;
-      hevyHistoryParsedCache = [];
+      hevyHistoryRawCache =
+        null;
+
+      hevyHistoryParsedCache =
+        [];
+
       return [];
     }
 
@@ -497,8 +682,10 @@ function getStoredHevyHistory(): StoredHevyWorkout[] {
     ) {
       hevyHistoryRawCache =
         raw;
+
       hevyHistoryParsedCache =
         [];
+
       return [];
     }
 
@@ -531,6 +718,99 @@ function getStoredHevyHistory(): StoredHevyWorkout[] {
   } catch {
     return [];
   }
+}
+
+// ============================================================
+// RECENT HISTORY WINDOW
+// ============================================================
+//
+// This is the important history reduction.
+//
+// The full localStorage history remains untouched.
+// Only workouts from the last WORKOUT_HISTORY_DAYS are returned.
+//
+// A supplied CURRENT WORKOUT is always included even if it is
+// slightly older than the window, so analysis can never lose
+// the exact session the user just asked about.
+//
+
+function getRecentHevyHistory(
+  currentWorkout:
+    | HevyWorkout
+    | null = null,
+): StoredHevyWorkout[] {
+  const stored =
+    getStoredHevyHistory();
+
+  const now =
+    Date.now();
+
+  const cutoff =
+    now -
+    WORKOUT_HISTORY_DAYS *
+      24 *
+      60 *
+      60 *
+      1000;
+
+  const withIds =
+    stored.map(
+      (item) => ({
+        ...item,
+        id:
+          item.id ??
+          getWorkoutId(item),
+      }),
+    );
+
+  let recent =
+    withIds.filter(
+      (item) => {
+        const timestamp =
+          parseWorkoutDate(
+            item.startTime,
+          );
+
+        return (
+          timestamp > 0 &&
+          timestamp >=
+            cutoff
+        );
+      },
+    );
+
+  if (
+    currentWorkout
+  ) {
+    const currentId =
+      getWorkoutId(
+        currentWorkout,
+      );
+
+    const exists =
+      recent.some(
+        (item) =>
+          item.id ===
+          currentId,
+      );
+
+    if (!exists) {
+      recent.push({
+        ...currentWorkout,
+        id: currentId,
+      });
+    }
+  }
+
+  return recent.sort(
+    (a, b) =>
+      parseWorkoutDate(
+        a.startTime,
+      ) -
+      parseWorkoutDate(
+        b.startTime,
+      ),
+  );
 }
 
 // ============================================================
@@ -611,26 +891,10 @@ function describeExercise(
 function buildHistoryLines(
   workout: HevyWorkout | null,
 ): string[] {
-  const storedHistory =
-    getStoredHevyHistory();
-
-  const sortedHistory =
-    storedHistory
-      .map((item) => ({
-        ...item,
-        id:
-          item.id ??
-          getWorkoutId(item),
-      }))
-      .sort(
-        (a, b) =>
-          parseWorkoutDate(
-            a.startTime,
-          ) -
-          parseWorkoutDate(
-            b.startTime,
-          ),
-      );
+  const recentHistory =
+    getRecentHevyHistory(
+      workout,
+    );
 
   let currentWorkoutId:
     | string
@@ -641,27 +905,11 @@ function buildHistoryLines(
       getWorkoutId(
         workout,
       );
-
-    if (
-      !sortedHistory.some(
-        (item) =>
-          item.id ===
-          currentWorkoutId,
-      )
-    ) {
-      sortedHistory.push({
-        ...workout,
-        id: currentWorkoutId,
-      });
-    }
   }
-
-  const recentHistory =
-    sortedHistory.slice(-10);
 
   const lines: string[] = [
     "",
-    `HEVY WORKOUT HISTORY: ${recentHistory.length} stored session(s).`,
+    `HEVY WORKOUT HISTORY: ${recentHistory.length} session(s) from the last ${WORKOUT_HISTORY_DAYS} days.`,
   ];
 
   if (
@@ -669,7 +917,7 @@ function buildHistoryLines(
     0
   ) {
     lines.push(
-      "No Hevy workout history stored yet.",
+      "No recent Hevy workout history stored yet.",
     );
   }
 
@@ -690,11 +938,14 @@ function buildHistoryLines(
           ? "CURRENT WORKOUT"
           : "HISTORICAL WORKOUT"
       } — ID: ${id}`,
+
       `Title: "${historyWorkout.title}"`,
+
       `Date/time: ${
         historyWorkout.startTime ??
         "unknown"
       }`,
+
       ...historyWorkout.exercises.map(
         describeExercise,
       ),
@@ -792,10 +1043,14 @@ function buildContext(
 // ============================================================
 // RECENT UNIQUE ROUTINES
 // ============================================================
+//
+// The picker now uses the same recent-history window as the AI
+// context, rather than looking at the last 10 sessions.
+//
 
 function getRecentRoutines(): string[] {
   const history =
-    getStoredHevyHistory();
+    getRecentHevyHistory();
 
   if (
     history.length ===
@@ -819,10 +1074,7 @@ function getRecentRoutines(): string[] {
     [];
 
   for (
-    const session of sorted.slice(
-      0,
-      10,
-    )
+    const session of sorted
   ) {
     const rawTitle =
       session.title?.trim();
@@ -1082,6 +1334,46 @@ function rankModels(
 }
 
 // ============================================================
+// REQUEST WITH TIMEOUT
+// ============================================================
+//
+// This only protects against a model request that hangs.
+// It does NOT add any intentional delay between models.
+//
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller =
+    new AbortController();
+
+  const timeout =
+    window.setTimeout(
+      () => {
+        controller.abort();
+      },
+      timeoutMs,
+    );
+
+  try {
+    return await fetch(
+      input,
+      {
+        ...init,
+        signal:
+          controller.signal,
+      },
+    );
+  } finally {
+    window.clearTimeout(
+      timeout,
+    );
+  }
+}
+
+// ============================================================
 // CALL GEMINI
 // ============================================================
 
@@ -1106,6 +1398,7 @@ async function callGemini(
           "assistant"
             ? "model"
             : "user",
+
         parts: [
           {
             text: m.content,
@@ -1116,6 +1409,7 @@ async function callGemini(
 
     {
       role: "user",
+
       parts: [
         {
           text: newPrompt,
@@ -1144,23 +1438,41 @@ async function callGemini(
   };
 
   // ==========================================================
-  // SPEED CHANGE:
-  // This now normally returns immediately from the cache.
-  // Google model discovery only happens once per API key.
+  // MODEL DISCOVERY
   // ==========================================================
+  //
+  // Normally this returns immediately from the cache.
+  //
+  // If discovery itself fails, DO NOT block the coach.
+  // Fall back to the preferred model list and let the normal
+  // model-by-model fallback logic determine what actually works.
+  //
 
-  const availableModels =
-    await getCachedAvailableModels(
-      apiKey,
+  let availableModels: string[];
+
+  try {
+    availableModels =
+      await getCachedAvailableModels(
+        apiKey,
+      );
+  } catch (discoveryError) {
+    console.warn(
+      "Gemini model discovery failed. Falling back to preferred model list.",
+      discoveryError,
     );
+
+    availableModels = [
+      ...PREFERRED_MODELS,
+    ];
+  }
 
   if (
     availableModels.length ===
     0
   ) {
-    throw new Error(
-      "This Gemini API key has no available models that support generateContent.",
-    );
+    availableModels = [
+      ...PREFERRED_MODELS,
+    ];
   }
 
   const rankedModels =
@@ -1182,12 +1494,42 @@ async function callGemini(
     );
   }
 
+  // ==========================================================
+  // IMMEDIATE FALLBACK LOOP
+  // ==========================================================
+  //
+  // IMPORTANT:
+  //
+  // 429 = quota/rate limit
+  // 408 = request timeout
+  // 5xx = server/model problem
+  //
+  // These immediately move to the next model.
+  //
+  // We NEVER sleep, wait for retry-after, or wait for Google's
+  // suggested retry interval.
+  // ==========================================================
+
   let lastErrorMsg =
     "Gemini request failed.";
 
   for (
     const model of rankedModels
   ) {
+    // Skip recently exhausted models.
+    if (
+      isModelCoolingDown(
+        apiKey,
+        model,
+      )
+    ) {
+      console.log(
+        `Skipping cooling-down Gemini model: ${model}`,
+      );
+
+      continue;
+    }
+
     try {
       console.log(
         `Trying Gemini model: ${model}`,
@@ -1197,7 +1539,7 @@ async function callGemini(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
       const res =
-        await fetch(
+        await fetchWithTimeout(
           url,
           {
             method: "POST",
@@ -1205,6 +1547,7 @@ async function callGemini(
             headers: {
               "Content-Type":
                 "application/json",
+
               "x-goog-api-key":
                 apiKey,
             },
@@ -1213,6 +1556,7 @@ async function callGemini(
               payload,
             ),
           },
+          MODEL_REQUEST_TIMEOUT_MS,
         );
 
       const data =
@@ -1221,6 +1565,10 @@ async function callGemini(
           .catch(
             () => ({}),
           );
+
+      // ========================================================
+      // SUCCESS
+      // ========================================================
 
       if (
         res.ok
@@ -1237,6 +1585,11 @@ async function callGemini(
             .trim() || "";
 
         if (text) {
+          clearModelCooldown(
+            apiKey,
+            model,
+          );
+
           console.log(
             `Gemini success using ${model}`,
           );
@@ -1254,57 +1607,157 @@ async function callGemini(
           lastErrorMsg,
         );
 
+        // Empty response is model-specific.
+        // Immediately continue.
         continue;
       }
 
+      // ========================================================
+      // ERROR CLASSIFICATION
+      // ========================================================
+
+      const status =
+        res.status;
+
       lastErrorMsg =
         data.error?.message ||
-        `HTTP ${res.status} from ${model}`;
+        `HTTP ${status} from ${model}`;
 
       console.warn(
-        `Gemini model ${model} failed:`,
+        `Gemini model ${model} failed (${status}):`,
         lastErrorMsg,
       );
 
-      // If a cached model has become unavailable,
-      // remove it from the cached discovery result.
-      if (
-        res.status === 404 ||
-        res.status === 400
-      ) {
-        const cachedPromise =
-          modelDiscoveryCache.get(
-            apiKey,
-          );
+      // ========================================================
+      // AUTHENTICATION ERRORS
+      // ========================================================
+      //
+      // These affect the API key rather than the model.
+      // Trying every model would just waste time.
+      //
 
-        if (
-          cachedPromise
-        ) {
-          cachedPromise
-            .then(
-              (
-                cachedModels,
-              ) => {
-                modelDiscoveryCache.set(
-                  apiKey,
-                  Promise.resolve(
-                    cachedModels.filter(
-                      (
-                        m,
-                      ) =>
-                        m !==
-                        model,
-                    ),
-                  ),
-                );
-              },
-            )
-            .catch(
-              () => {},
-            );
-        }
+      if (
+        status === 401 ||
+        status === 403
+      ) {
+        throw new Error(
+          lastErrorMsg,
+        );
       }
+
+      // ========================================================
+      // RATE LIMIT / QUOTA
+      // ========================================================
+      //
+      // THIS IS THE IMPORTANT PART:
+      //
+      // If Gemini says this model is exhausted, mark only this
+      // model as cooling down and instantly try the next one.
+      //
+      // There is deliberately NO delay here.
+      //
+
+      if (
+        status === 429
+      ) {
+        markModelCooldown(
+          apiKey,
+          model,
+        );
+
+        console.log(
+          `Model ${model} is rate-limited. Immediately falling back to the next model.`,
+        );
+
+        continue;
+      }
+
+      // ========================================================
+      // TEMPORARY MODEL / SERVER ERRORS
+      // ========================================================
+
+      if (
+        status === 408 ||
+        status === 409 ||
+        status === 500 ||
+        status === 502 ||
+        status === 503 ||
+        status === 504
+      ) {
+        console.log(
+          `Model ${model} returned ${status}. Immediately falling back.`,
+        );
+
+        continue;
+      }
+
+      // ========================================================
+      // MODEL NO LONGER AVAILABLE
+      // ========================================================
+
+      if (
+        status === 404
+      ) {
+        console.log(
+          `Model ${model} is unavailable. Immediately falling back.`,
+        );
+
+        // Remove it from the discovery cache so the next
+        // request can refresh the available model list.
+        modelDiscoveryCache.delete(
+          apiKey,
+        );
+
+        continue;
+      }
+
+      // ========================================================
+      // BAD REQUEST
+      // ========================================================
+      //
+      // A 400 can be model-specific, so continue to the next
+      // model rather than stopping the entire coach.
+      //
+
+      if (
+        status === 400
+      ) {
+        console.log(
+          `Model ${model} rejected the request. Trying next model.`,
+        );
+
+        continue;
+      }
+
+      // ========================================================
+      // ANY OTHER HTTP FAILURE
+      // ========================================================
+      //
+      // Still continue the fallback chain rather than making the
+      // user manually press Retry.
+      //
+
+      continue;
     } catch (err) {
+      // AbortError means our model timeout fired.
+      // Move immediately to the next model.
+
+      if (
+        err instanceof
+          DOMException &&
+        err.name ===
+          "AbortError"
+      ) {
+        lastErrorMsg =
+          `Model ${model} timed out after ${MODEL_REQUEST_TIMEOUT_MS / 1000}s.`;
+
+        console.warn(
+          lastErrorMsg,
+        );
+
+        continue;
+      }
+
       lastErrorMsg =
         err instanceof Error
           ? err.message
@@ -1314,6 +1767,9 @@ async function callGemini(
         `Gemini model ${model} threw an error:`,
         lastErrorMsg,
       );
+
+      // Network/model errors should also immediately cascade.
+      continue;
     }
   }
 
@@ -1498,8 +1954,8 @@ export function CoachDrawer({
   // ROUTINES
   // ==========================================================
   //
-  // Memoised so rendering the drawer does not repeatedly parse
-  // and sort the Hevy history just to create the same buttons.
+  // Uses the recent 7-day history window rather than repeatedly
+  // examining the entire stored history.
   //
 
   const recentRoutines =
@@ -1540,9 +1996,12 @@ export function CoachDrawer({
     setApiKey,
   ] = useState(
     () =>
-      localStorage.getItem(
-        "p35_gemini_api_key",
-      ) || "",
+      typeof window !==
+      "undefined"
+        ? localStorage.getItem(
+            "p35_gemini_api_key",
+          ) || ""
+        : "",
   );
 
   const [
@@ -1671,10 +2130,6 @@ export function CoachDrawer({
       false,
     );
 
-    // IMPORTANT:
-    // If the API key changes, its model cache is naturally
-    // separated because the cache is keyed by API key.
-
     toast.success(
       clean
         ? "Gemini key saved."
@@ -1757,6 +2212,9 @@ export function CoachDrawer({
         [...messages];
 
       // Build the context once for this request.
+      //
+      // Workout history is automatically limited to the
+      // WORKOUT_HISTORY_DAYS window inside buildContext().
       const context =
         buildContext(
           workout,
@@ -1932,6 +2390,7 @@ export function CoachDrawer({
                       activeModel && (
                         <div className="flex items-center gap-1 pl-2 text-[10px] text-muted-foreground/60">
                           <Cpu className="size-2.5" />
+
                           <span>
                             {
                               activeModel
