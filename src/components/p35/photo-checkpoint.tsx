@@ -33,7 +33,10 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   const [modalImage, setModalImage] = useState<{ src: string; title: string } | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveAngle, setArchiveAngle] = useState<PhotoAngle>("front");
-  const [isPhotoPending, setIsPhotoPending] = useState(false);
+  
+  // Two explicit states: One for the current week's status, one for overdue debt from previous weeks
+  const [isCleared, setIsCleared] = useState(false);
+  const [hasDebt, setHasDebt] = useState(false);
 
   const { photos, archive = [], upload, removePhoto, closeAndArchiveBlock } = usePhotos(userId);
   const pending = useRef<PhotoSlot>("baseline");
@@ -41,17 +44,24 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
 
   const { currentWeek, totalWeeks, blockName, phaseTitle } = getActiveBlockCountdown();
   const isFinalWeek = currentWeek >= totalWeeks;
+  const isPhotoWeek = currentWeek % 4 === 0;
 
   const activeAnglePhotos = photos?.[selectedAngle] || { baseline: null, current: null };
 
+  // Calculate if the component needs to scream at you
+  const requiresAttention = (isPhotoWeek && !isCleared) || hasDebt;
+
   useEffect(() => {
-    const checkPending = () => {
-      setIsPhotoPending(localStorage.getItem("p35_photo_checkpoint_pending") === "true");
+    const checkStatus = () => {
+      const clearedWeek = localStorage.getItem(`p35_photo_cleared_week_${currentWeek}`) === "true";
+      const debtActive = localStorage.getItem("p35_photo_checkpoint_pending") === "true";
+      setIsCleared(clearedWeek);
+      setHasDebt(debtActive);
     };
-    checkPending();
-    window.addEventListener("p35-photo-pending-updated", checkPending);
-    return () => window.removeEventListener("p35-photo-pending-updated", checkPending);
-  }, []);
+    checkStatus();
+    window.addEventListener("p35-photo-pending-updated", checkStatus);
+    return () => window.removeEventListener("p35-photo-pending-updated", checkStatus);
+  }, [currentWeek]);
 
   const pick = (slot: PhotoSlot) => {
     pending.current = slot;
@@ -73,14 +83,16 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
             `${pending.current === "baseline" ? "Baseline" : "Current"} (${selectedAngle.toUpperCase()}) saved.`
           );
 
-          const currentProgramWeek = getProgramWeekNumber(new Date());
-          localStorage.setItem(`p35_photo_cleared_week_${currentProgramWeek}`, "true");
+          // Mark current week as cleared
+          localStorage.setItem(`p35_photo_cleared_week_${currentWeek}`, "true");
 
+          // Clear any active overdue debt and remember we did it (in case they delete the photo)
           if (localStorage.getItem("p35_photo_checkpoint_pending") === "true") {
             localStorage.setItem("p35_photo_checkpoint_pending", "false");
-            setIsPhotoPending(false);
-            window.dispatchEvent(new Event("p35-photo-pending-updated"));
+            localStorage.setItem("p35_photo_was_pending_debt", "true");
           }
+          
+          window.dispatchEvent(new Event("p35-photo-pending-updated"));
         },
         onError: (error) =>
           toast.error(error instanceof Error ? error.message : "Upload failed."),
@@ -116,10 +128,10 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   ];
 
   return (
-    <section className={`panel p-5 space-y-4 transition-all duration-500 ${isPhotoPending ? "border-amber-500/60 bg-amber-500/5 shadow-[0_0_15px_rgba(245,158,11,0.15)]" : ""}`}>
+    <section className={`panel p-5 space-y-4 transition-all duration-500 ${requiresAttention ? "border-amber-500/50 bg-amber-500/5 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.15)]" : "border-primary/30 bg-surface-2/40"}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Camera className={`size-5 transition-colors ${isPhotoPending ? "text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]" : "text-primary"}`} />
+          <Camera className={`size-5 transition-colors ${requiresAttention ? "text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]" : "text-primary"}`} />
           <h2 className="text-lg font-bold">Photo Checkpoint</h2>
           {upload.isPending && <Loader2 className="size-4 animate-spin text-primary" />}
         </div>
@@ -213,21 +225,22 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
                           {
                             onSuccess: () => {
                               if (slot === "current") {
-                                // Check if any OTHER current photos exist across the angles
                                 const hasOtherCurrent = ANGLES.some(
                                   (a) => a.id !== selectedAngle && photos?.[a.id]?.current
                                 );
 
-                                // If this was the last photo, revert the cleared flags
                                 if (!hasOtherCurrent) {
-                                  const currentProgramWeek = getProgramWeekNumber(new Date());
-                                  localStorage.removeItem(`p35_photo_cleared_week_${currentProgramWeek}`);
+                                  // Clear the current week flag so it reverts to amber if it's currently week 4
+                                  localStorage.removeItem(`p35_photo_cleared_week_${currentWeek}`);
                                   
-                                  if (currentProgramWeek % 4 === 0) {
+                                  // Re-instate any historical debt if applicable
+                                  const wasPendingDebt = localStorage.getItem("p35_photo_was_pending_debt") === "true";
+                                  if (wasPendingDebt) {
                                     localStorage.setItem("p35_photo_checkpoint_pending", "true");
-                                    setIsPhotoPending(true);
-                                    window.dispatchEvent(new Event("p35-photo-pending-updated"));
+                                    localStorage.removeItem("p35_photo_was_pending_debt");
                                   }
+                                  
+                                  window.dispatchEvent(new Event("p35-photo-pending-updated"));
                                 }
                               }
                             },
@@ -273,13 +286,13 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
       </div>
 
       <Button
-        variant={isPhotoPending ? "default" : "secondary"}
-        className={`w-full transition-colors ${isPhotoPending ? "bg-amber-500 text-black hover:bg-amber-400 font-bold shadow-[0_0_12px_rgba(245,158,11,0.3)]" : ""}`}
+        variant={requiresAttention ? "default" : "secondary"}
+        className={`w-full transition-colors ${requiresAttention ? "bg-amber-500 text-black hover:bg-amber-400 font-bold shadow-[0_0_12px_rgba(245,158,11,0.3)]" : ""}`}
         disabled={upload.isPending}
         onClick={() => pick("current")}
       >
         <ImagePlus className="size-4 mr-2" /> 
-        {isPhotoPending ? "Upload Checkpoint Photos" : `Upload current (${selectedAngle})`}
+        {requiresAttention ? "Upload Checkpoint Photos" : `Upload current (${selectedAngle})`}
       </Button>
 
       <input
