@@ -416,11 +416,14 @@ export function WeeklyTrendsAnalytics() {
    * EXERCISE TREND ROW
    * ============================================================
    *
+   * Fixed-width percentage columns ensure that every exercise
+   * row lines up vertically.
+   *
    * Shows only:
    * - Strength/e1RM percentage change
    * - Volume percentage change
    *
-   * Raw e1RM and "e1RM"/"Vol" labels are intentionally hidden.
+   * Raw e1RM and "e1RM"/"Vol" labels remain hidden.
    */
 
   const renderExerciseTrend = (
@@ -442,43 +445,41 @@ export function WeeklyTrendsAnalytics() {
     return (
       <div
         key={`${exercise.exerciseName}-${idx}`}
-        className="flex items-center justify-between gap-3 text-xs py-1.5 border-t border-border/20 first:border-0"
+        className="grid grid-cols-[minmax(0,1fr)_56px_56px] items-center gap-2 text-xs py-1.5 border-t border-border/20 first:border-0"
       >
-        <span className="text-foreground truncate min-w-0 flex-1">
+        <span className="text-foreground truncate min-w-0">
           {exercise.exerciseName}
         </span>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <span
-            className={
-              e1rmPositive
-                ? "text-emerald-500 font-semibold"
-                : e1rmNegative
-                  ? "text-rose-500 font-semibold"
-                  : "text-muted-foreground font-semibold"
-            }
-          >
-            {exercise.percentChange > 0
-              ? "+"
-              : ""}
-            {exercise.percentChange}%
-          </span>
+        <span
+          className={`w-14 text-right ${
+            e1rmPositive
+              ? "text-emerald-500 font-semibold"
+              : e1rmNegative
+                ? "text-rose-500 font-semibold"
+                : "text-muted-foreground font-semibold"
+          }`}
+        >
+          {exercise.percentChange > 0
+            ? "+"
+            : ""}
+          {exercise.percentChange}%
+        </span>
 
-          <span
-            className={
-              volumePositive
-                ? "text-emerald-500 font-semibold"
-                : volumeNegative
-                  ? "text-rose-500 font-semibold"
-                  : "text-muted-foreground font-semibold"
-            }
-          >
-            {exercise.volumeChange > 0
-              ? "+"
-              : ""}
-            {exercise.volumeChange}%
-          </span>
-        </div>
+        <span
+          className={`w-14 text-right ${
+            volumePositive
+              ? "text-emerald-500 font-semibold"
+              : volumeNegative
+                ? "text-rose-500 font-semibold"
+                : "text-muted-foreground font-semibold"
+          }`}
+        >
+          {exercise.volumeChange > 0
+            ? "+"
+            : ""}
+          {exercise.volumeChange}%
+        </span>
       </div>
     );
   };
@@ -505,10 +506,6 @@ export function WeeklyTrendsAnalytics() {
 
     setExpandedGroup(nextExpanded);
 
-    /*
-     * Close any currently-open leg subgroup
-     * when changing the main muscle group.
-     */
     if (
       group !== "Legs" ||
       isExpanded
@@ -518,486 +515,499 @@ export function WeeklyTrendsAnalytics() {
   };
 
   return (
-    <div className="min-w-0">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-bold truncate text-foreground">
-            Weekly Trends & Analytics
-          </p>
+    <div className="w-full">
+      {/* ========================================================
+          CARD / TRIGGER
+          Matches the existing Project Ascension card UI.
+          ======================================================== */}
 
-          <p className="text-xs text-muted-foreground truncate">
-            Review 4-week compliance history
-          </p>
-        </div>
+      <Dialog
+        open={isOpen}
+        onOpenChange={(open) => {
+          setIsOpen(open);
 
-        <Dialog
-          open={isOpen}
-          onOpenChange={(open) => {
-            setIsOpen(open);
+          if (!open) {
+            setExpandedGroup(null);
+            setExpandedLegSubGroup(null);
+          }
+        }}
+      >
+        <DialogTrigger asChild>
+          <div className="panel flex items-center justify-between p-4 cursor-pointer hover:border-primary/50 transition-colors w-full gap-2">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <BarChart3 className="size-5 shrink-0 text-primary" />
 
-            if (!open) {
-              setExpandedGroup(null);
-              setExpandedLegSubGroup(null);
-            }
-          }}
-        >
-          <DialogTrigger asChild>
+              <div className="min-w-0 w-full text-left">
+                <p className="text-sm font-bold truncate text-foreground">
+                  Weekly Trends & Analytics
+                </p>
+
+                <p className="text-xs text-muted-foreground truncate w-full">
+                  Review 4-week compliance history
+                </p>
+              </div>
+            </div>
+
             <Button
               variant="secondary"
               size="sm"
-              className="gap-1.5 h-8 text-xs shrink-0 pointer-events-auto"
+              className="pointer-events-none gap-1.5 h-8 text-xs shrink-0 min-w-[84px] justify-center"
             >
               <BarChart3 className="size-3.5" />
-              Trends
+              <span>Trends</span>
             </Button>
-          </DialogTrigger>
+          </div>
+        </DialogTrigger>
 
-          <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <BarChart3 className="size-5 text-primary" />
-                Performance Analytics
-              </DialogTitle>
-            </DialogHeader>
+        {/* ======================================================
+            ANALYTICS DIALOG
+            ====================================================== */}
 
-            <div className="space-y-5 pt-2">
-              {/* ==================================================
-                  ADHERENCE SUMMARY
-                  ================================================== */}
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BarChart3 className="size-5 text-primary" />
+              Performance Analytics
+            </DialogTitle>
+          </DialogHeader>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
-                  <p className="stat-label flex items-center justify-center gap-1">
-                    <CheckCircle2 className="size-3.5 text-primary" />
-                    <span>
-                      4-Week Avg Adherence
-                    </span>
-                  </p>
+          <div className="space-y-5 pt-2">
+            {/* ==================================================
+                ADHERENCE SUMMARY
+                ================================================== */}
 
-                  <p className="font-display text-2xl font-bold text-primary">
-                    {averageScore}%
-                  </p>
-                </div>
-
-                <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
-                  <p className="stat-label flex items-center justify-center gap-1">
-                    <Flame className="size-3.5 text-amber-500" />
-                    <span>
-                      Execution Status
-                    </span>
-                  </p>
-
-                  <p className="text-sm font-semibold text-foreground pt-1">
-                    {averageScore >= 80
-                      ? "Top form, keep it up!"
-                      : averageScore >= 50
-                        ? "Building Momentum, push harder"
-                        : "Absolutely shite, switch on!"}
-                  </p>
-                </div>
-              </div>
-
-              {/* ==================================================
-                  WEEKLY ADHERENCE
-                  ================================================== */}
-
-              <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Rolling 4 Week Adherence
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
+                <p className="stat-label flex items-center justify-center gap-1">
+                  <CheckCircle2 className="size-3.5 text-primary" />
+                  <span>
+                    4-Week Avg Adherence
+                  </span>
                 </p>
 
-                <div className="space-y-3 pt-1">
-                  {trendData.map(
-                    (week, idx) => (
-                      <div
-                        key={idx}
-                        className="space-y-1"
-                      >
-                        <div className="flex justify-between text-xs font-medium">
-                          <span className="text-foreground">
-                            {week.weekLabel}
-                          </span>
-
-                          <span className="text-primary font-semibold">
-                            {week.score}%
-                          </span>
-                        </div>
-
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-border/65">
-                          <div
-                            className="h-full bg-primary transition-all duration-500 rounded-full"
-                            style={{
-                              width: `${week.score}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  )}
-                </div>
+                <p className="font-display text-2xl font-bold text-primary">
+                  {averageScore}%
+                </p>
               </div>
 
-              <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-                Adherence is calculated dynamically based on weekday rules and weekly execution protocol targets.
+              <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
+                <p className="stat-label flex items-center justify-center gap-1">
+                  <Flame className="size-3.5 text-amber-500" />
+                  <span>
+                    Execution Status
+                  </span>
+                </p>
+
+                <p className="text-sm font-semibold text-foreground pt-1">
+                  {averageScore >= 80
+                    ? "Top form, keep it up!"
+                    : averageScore >= 50
+                      ? "Building Momentum, push harder"
+                      : "Absolutely shite, switch on!"}
+                </p>
+              </div>
+            </div>
+
+            {/* ==================================================
+                WEEKLY ADHERENCE
+                ================================================== */}
+
+            <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Rolling 4 Week Adherence
               </p>
 
+              <div className="space-y-3 pt-1">
+                {trendData.map(
+                  (week, idx) => (
+                    <div
+                      key={idx}
+                      className="space-y-1"
+                    >
+                      <div className="flex justify-between text-xs font-medium">
+                        <span className="text-foreground">
+                          {week.weekLabel}
+                        </span>
+
+                        <span className="text-primary font-semibold">
+                          {week.score}%
+                        </span>
+                      </div>
+
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-border/65">
+                        <div
+                          className="h-full bg-primary transition-all duration-500 rounded-full"
+                          style={{
+                            width: `${week.score}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+              Adherence is calculated dynamically based on weekday rules and weekly execution protocol targets.
+            </p>
+
+            {/* ==================================================
+                TRAINING MOMENTUM
+                ================================================== */}
+
+            <div className="mt-6 pt-5 border-t border-border space-y-4">
+              <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
+                Training Momentum
+              </h3>
+
               {/* ==================================================
-                  TRAINING MOMENTUM
+                  OVERALL
                   ================================================== */}
 
-              <div className="mt-6 pt-5 border-t border-border space-y-4">
-                <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-                  Training Momentum
-                </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Strength
+                  </p>
 
-                {/* Overall */}
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Strength
-                    </p>
-
-                    <div className="font-display text-xl font-bold pt-1">
-                      {renderChangeBadge(
-                        progress.overallStrengthChange,
-                        true
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Volume
-                    </p>
-
-                    <div className="font-display text-xl font-bold pt-1">
-                      {renderChangeBadge(
-                        progress.overallVolumeChange,
-                        true
-                      )}
-                    </div>
+                  <div className="font-display text-xl font-bold pt-1">
+                    {renderChangeBadge(
+                      progress.overallStrengthChange,
+                      true
+                    )}
                   </div>
                 </div>
 
-                {/* ==================================================
-                    MUSCLE GROUP TABLE
-                    ================================================== */}
+                <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Volume
+                  </p>
 
-                <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
-                  <div className="flex items-center justify-between pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    <span>
-                      Muscle Groups
-                    </span>
-
-                    <div className="flex gap-6 pr-2">
-                      <span>
-                        Strength
-                      </span>
-
-                      <span>
-                        Volume
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 pt-1">
-                    {MUSCLE_GROUPS.map(
-                      (group) => {
-                        const data =
-                          progress.muscleGroups[
-                            group
-                          ];
-
-                        const hasActivity =
-                          data &&
-                          (
-                            data.currentVolume >
-                              0 ||
-                            data.baselineVolume >
-                              0
-                          );
-
-                        const isExpanded =
-                          expandedGroup ===
-                          group;
-
-                        return (
-                          <div
-                            key={group}
-                            className="border-b border-border/40 last:border-0 pb-1"
-                          >
-                            {/* ==================================================
-                                MAIN MUSCLE ROW
-                                ================================================== */}
-
-                            <div
-                              onClick={() =>
-                                handleGroupToggle(
-                                  group,
-                                  hasActivity,
-                                  isExpanded
-                                )
-                              }
-                              className={`flex items-center justify-between text-sm py-2 px-2 rounded-lg transition-colors ${
-                                hasActivity
-                                  ? "cursor-pointer hover:bg-surface-2/80"
-                                  : ""
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="font-medium text-foreground">
-                                  {group}
-                                </span>
-
-                                {hasActivity &&
-                                  (
-                                    group ===
-                                    "Legs"
-                                      ? LEG_MUSCLE_GROUPS.some(
-                                          (
-                                            subGroup
-                                          ) =>
-                                            data
-                                              .legSubGroups[
-                                              subGroup
-                                            ]
-                                              .topExercises
-                                              .length >
-                                            0
-                                        )
-                                      : data
-                                          .topExercises
-                                          .length >
-                                        0
-                                  ) && (
-                                    <ChevronDown
-                                      className={`size-3.5 text-muted-foreground transition-transform duration-200 ${
-                                        isExpanded
-                                          ? "rotate-180"
-                                          : ""
-                                      }`}
-                                    />
-                                  )}
-                              </div>
-
-                              <div className="flex gap-6 text-right shrink-0">
-                                <div className="w-16 text-right">
-                                  {renderChangeBadge(
-                                    data.strengthChange,
-                                    hasActivity &&
-                                      data.baselineVolume >
-                                        0
-                                  )}
-                                </div>
-
-                                <div className="w-16 text-right">
-                                  {renderChangeBadge(
-                                    data.volumeChange,
-                                    hasActivity
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* ==================================================
-                                NON-LEG MUSCLE GROUPS
-                                ================================================== */}
-
-                            {isExpanded &&
-                              group !==
-                                "Legs" &&
-                              data.topExercises
-                                .length >
-                                0 && (
-                                <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
-                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Top Exercises (4-Week Trend)
-                                  </p>
-
-                                  {data.topExercises.map(
-                                    (
-                                      exercise,
-                                      idx
-                                    ) =>
-                                      renderExerciseTrend(
-                                        exercise,
-                                        idx
-                                      )
-                                  )}
-                                </div>
-                              )}
-
-                            {/* ==================================================
-                                LEGS → SUBGROUPS
-                                ================================================== */}
-
-                            {isExpanded &&
-                              group ===
-                                "Legs" && (
-                                <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
-                                  <div className="space-y-1">
-                                    {LEG_MUSCLE_GROUPS.map(
-                                      (
-                                        subGroup
-                                      ) => {
-                                        const subData =
-                                          data
-                                            .legSubGroups[
-                                            subGroup
-                                          ];
-
-                                        const hasSubActivity =
-                                          subData &&
-                                          (
-                                            subData.currentVolume >
-                                              0 ||
-                                            subData.baselineVolume >
-                                              0
-                                          );
-
-                                        const hasExercises =
-                                          subData
-                                            .topExercises
-                                            .length >
-                                          0;
-
-                                        const isSubExpanded =
-                                          expandedLegSubGroup ===
-                                          subGroup;
-
-                                        return (
-                                          <div
-                                            key={
-                                              subGroup
-                                            }
-                                            className="border-b border-border/20 last:border-0"
-                                          >
-                                            {/* Leg subgroup row */}
-
-                                            <div
-                                              onClick={() => {
-                                                if (
-                                                  !hasSubActivity ||
-                                                  !hasExercises
-                                                ) {
-                                                  return;
-                                                }
-
-                                                setExpandedLegSubGroup(
-                                                  isSubExpanded
-                                                    ? null
-                                                    : subGroup
-                                                );
-                                              }}
-                                              className={`flex items-center justify-between text-xs py-2 px-2 rounded-md transition-colors ${
-                                                hasSubActivity &&
-                                                hasExercises
-                                                  ? "cursor-pointer hover:bg-surface-2/80"
-                                                  : "opacity-60"
-                                              }`}
-                                            >
-                                              <div className="flex items-center gap-2 min-w-0">
-                                                {hasSubActivity &&
-                                                hasExercises ? (
-                                                  <ChevronDown
-                                                    className={`size-3 text-muted-foreground transition-transform duration-200 ${
-                                                      isSubExpanded
-                                                        ? "rotate-180"
-                                                        : ""
-                                                    }`}
-                                                  />
-                                                ) : (
-                                                  <span className="size-3" />
-                                                )}
-
-                                                <span className="font-semibold text-foreground">
-                                                  {
-                                                    subGroup
-                                                  }
-                                                </span>
-                                              </div>
-
-                                              <div className="flex gap-6 text-right shrink-0">
-                                                <div className="w-16 text-right">
-                                                  {renderChangeBadge(
-                                                    subData.strengthChange,
-                                                    hasSubActivity &&
-                                                      subData.baselineVolume >
-                                                        0
-                                                  )}
-                                                </div>
-
-                                                <div className="w-16 text-right">
-                                                  {renderChangeBadge(
-                                                    subData.volumeChange,
-                                                    hasSubActivity
-                                                  )}
-                                                </div>
-                                              </div>
-                                            </div>
-
-                                            {/* ==================================================
-                                                SUBGROUP → EXERCISES
-                                                ================================================== */}
-
-                                            {isSubExpanded &&
-                                              hasExercises && (
-                                                <div className="ml-4 mr-1 mb-2 px-2.5 py-2 rounded-md bg-surface-2/40 border border-border/30 space-y-1">
-                                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">
-                                                    Top Exercises (4-Week Trend)
-                                                  </p>
-
-                                                  {subData.topExercises.map(
-                                                    (
-                                                      exercise,
-                                                      idx
-                                                    ) =>
-                                                      renderExerciseTrend(
-                                                        exercise,
-                                                        idx
-                                                      )
-                                                  )}
-                                                </div>
-                                              )}
-                                          </div>
-                                        );
-                                      }
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                          </div>
-                        );
-                      }
+                  <div className="font-display text-xl font-bold pt-1">
+                    {renderChangeBadge(
+                      progress.overallVolumeChange,
+                      true
                     )}
                   </div>
                 </div>
               </div>
 
-              <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-                Volume and strength reflect the last 7 days compared against your rolling 4-week baseline. Volume is calculated from weight × reps.
-              </p>
-
               {/* ==================================================
-                  HEVY LINK
+                  MUSCLE GROUP TABLE
                   ================================================== */}
 
-              <div className="pt-2">
-                <a
-                  href="hevy://"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full flex items-center justify-center gap-2 rounded-lg border border-border bg-surface-2/60 hover:bg-surface-2 py-2.5 text-xs font-semibold text-foreground transition-colors"
-                >
-                  <ExternalLink className="size-3.5 text-primary" />
-                  Open Hevy App
-                </a>
+              <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
+                {/* TABLE HEADER */}
+
+                <div className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span>
+                    Muscle Groups
+                  </span>
+
+                  <span className="w-16 text-right">
+                    Strength
+                  </span>
+
+                  <span className="w-16 text-right">
+                    Volume
+                  </span>
+                </div>
+
+                <div className="space-y-3 pt-1">
+                  {MUSCLE_GROUPS.map(
+                    (group) => {
+                      const data =
+                        progress.muscleGroups[
+                          group
+                        ];
+
+                      const hasActivity =
+                        data &&
+                        (
+                          data.currentVolume >
+                            0 ||
+                          data.baselineVolume >
+                            0
+                        );
+
+                      const isExpanded =
+                        expandedGroup ===
+                        group;
+
+                      return (
+                        <div
+                          key={group}
+                          className="border-b border-border/40 last:border-0 pb-1"
+                        >
+                          {/* ==================================================
+                              MAIN MUSCLE ROW
+                              ================================================== */}
+
+                          <div
+                            onClick={() =>
+                              handleGroupToggle(
+                                group,
+                                hasActivity,
+                                isExpanded
+                              )
+                            }
+                            className={`grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 text-sm py-2 px-2 rounded-lg transition-colors ${
+                              hasActivity
+                                ? "cursor-pointer hover:bg-surface-2/80"
+                                : ""
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-medium text-foreground truncate">
+                                {group}
+                              </span>
+
+                              {hasActivity &&
+                                (
+                                  group ===
+                                  "Legs"
+                                    ? LEG_MUSCLE_GROUPS.some(
+                                        (
+                                          subGroup
+                                        ) =>
+                                          data
+                                            .legSubGroups[
+                                            subGroup
+                                          ]
+                                            .topExercises
+                                            .length >
+                                          0
+                                      )
+                                    : data
+                                        .topExercises
+                                        .length >
+                                      0
+                                ) && (
+                                  <ChevronDown
+                                    className={`size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${
+                                      isExpanded
+                                        ? "rotate-180"
+                                        : ""
+                                    }`}
+                                  />
+                                )}
+                            </div>
+
+                            <div className="w-16 text-right">
+                              {renderChangeBadge(
+                                data.strengthChange,
+                                hasActivity &&
+                                  data.baselineVolume >
+                                    0
+                              )}
+                            </div>
+
+                            <div className="w-16 text-right">
+                              {renderChangeBadge(
+                                data.volumeChange,
+                                hasActivity
+                              )}
+                            </div>
+                          </div>
+
+                          {/* ==================================================
+                              NON-LEG MUSCLE GROUPS
+                              ================================================== */}
+
+                          {isExpanded &&
+                            group !==
+                              "Legs" &&
+                            data.topExercises
+                              .length >
+                              0 && (
+                              <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  Top Exercises (4-Week Trend)
+                                </p>
+
+                                {data.topExercises.map(
+                                  (
+                                    exercise,
+                                    idx
+                                  ) =>
+                                    renderExerciseTrend(
+                                      exercise,
+                                      idx
+                                    )
+                                )}
+                              </div>
+                            )}
+
+                          {/* ==================================================
+                              LEGS → SUBGROUPS
+                              ================================================== */}
+
+                          {isExpanded &&
+                            group ===
+                              "Legs" && (
+                              <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
+                                <div className="space-y-1">
+                                  {LEG_MUSCLE_GROUPS.map(
+                                    (
+                                      subGroup
+                                    ) => {
+                                      const subData =
+                                        data
+                                          .legSubGroups[
+                                          subGroup
+                                        ];
+
+                                      const hasSubActivity =
+                                        subData &&
+                                        (
+                                          subData.currentVolume >
+                                            0 ||
+                                          subData.baselineVolume >
+                                            0
+                                        );
+
+                                      const hasExercises =
+                                        subData
+                                          .topExercises
+                                          .length >
+                                        0;
+
+                                      const isSubExpanded =
+                                        expandedLegSubGroup ===
+                                        subGroup;
+
+                                      return (
+                                        <div
+                                          key={
+                                            subGroup
+                                          }
+                                          className="border-b border-border/20 last:border-0"
+                                        >
+                                          {/* ==================================================
+                                              LEG SUBGROUP ROW
+                                              ================================================== */}
+
+                                          <div
+                                            onClick={() => {
+                                              if (
+                                                !hasSubActivity ||
+                                                !hasExercises
+                                              ) {
+                                                return;
+                                              }
+
+                                              setExpandedLegSubGroup(
+                                                isSubExpanded
+                                                  ? null
+                                                  : subGroup
+                                              );
+                                            }}
+                                            className={`grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 text-xs py-2 px-2 rounded-md transition-colors ${
+                                              hasSubActivity &&
+                                              hasExercises
+                                                ? "cursor-pointer hover:bg-surface-2/80"
+                                                : "opacity-60"
+                                            }`}
+                                          >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                              {hasSubActivity &&
+                                              hasExercises ? (
+                                                <ChevronDown
+                                                  className={`size-3 shrink-0 text-muted-foreground transition-transform duration-200 ${
+                                                    isSubExpanded
+                                                      ? "rotate-180"
+                                                      : ""
+                                                  }`}
+                                                />
+                                              ) : (
+                                                <span className="size-3 shrink-0" />
+                                              )}
+
+                                              <span className="font-semibold text-foreground truncate">
+                                                {
+                                                  subGroup
+                                                }
+                                              </span>
+                                            </div>
+
+                                            <div className="w-16 text-right">
+                                              {renderChangeBadge(
+                                                subData.strengthChange,
+                                                hasSubActivity &&
+                                                  subData.baselineVolume >
+                                                    0
+                                              )}
+                                            </div>
+
+                                            <div className="w-16 text-right">
+                                              {renderChangeBadge(
+                                                subData.volumeChange,
+                                                hasSubActivity
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* ==================================================
+                                              SUBGROUP → EXERCISES
+                                              ================================================== */}
+
+                                          {isSubExpanded &&
+                                            hasExercises && (
+                                            <div className="ml-4 mr-1 mb-2 px-2.5 py-2 rounded-md bg-surface-2/40 border border-border/30 space-y-1">
+                                              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">
+                                                Top Exercises (4-Week Trend)
+                                              </p>
+
+                                              {subData.topExercises.map(
+                                                (
+                                                  exercise,
+                                                  idx
+                                                ) =>
+                                                  renderExerciseTrend(
+                                                    exercise,
+                                                    idx
+                                                  )
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                        </div>
+                      );
+                    }
+                  )}
+                </div>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
+
+            <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+              Volume and strength reflect the last 7 days compared against your rolling 4-week baseline. Volume is calculated from weight × reps.
+            </p>
+
+            {/* ==================================================
+                HEVY LINK
+                ================================================== */}
+
+            <div className="pt-2">
+              <a
+                href="hevy://"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2 rounded-lg border border-border bg-surface-2/60 hover:bg-surface-2 py-2.5 text-xs font-semibold text-foreground transition-colors"
+              >
+                <ExternalLink className="size-3.5 text-primary" />
+                Open Hevy App
+              </a>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
