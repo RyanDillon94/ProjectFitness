@@ -21,24 +21,37 @@ export type LegSubGroup =
   | "Glutes"
   | "Calves";
 
-export const LEG_SUBGROUPS: LegSubGroup[] = [
+/**
+ * Primary leg areas used by Training Momentum.
+ */
+export const LEG_MUSCLE_GROUPS: LegSubGroup[] = [
   "Quads",
   "Hamstrings",
   "Glutes",
   "Calves",
 ];
 
+/**
+ * Backwards-compatible alias.
+ * This means existing code using LEG_SUBGROUPS will also continue
+ * to work without breaking the build.
+ */
+export const LEG_SUBGROUPS =
+  LEG_MUSCLE_GROUPS;
+
 export interface ExerciseTarget {
   primary: MuscleGroup;
   secondary?: MuscleGroup;
 }
 
-/*
+/**
  * IMPORTANT:
- * This map defines the PRIMARY muscle for analytics.
+ *
+ * `primary` is the ONLY muscle used by Training Momentum.
  *
  * Secondary muscles are retained for compatibility with other
- * parts of the app, but Training Momentum only uses `primary`.
+ * parts of the application but are deliberately NOT counted
+ * toward Training Momentum.
  */
 export const EXERCISE_TARGET_MAP: Record<
   string,
@@ -413,7 +426,7 @@ export const EXERCISE_TARGET_MAP: Record<
   "standing y raise": {
     primary: "Shoulders",
   },
-  "shrug": {
+  shrug: {
     primary: "Shoulders",
   },
 
@@ -642,12 +655,8 @@ export const EXERCISE_TARGET_MAP: Record<
   },
 };
 
-/*
- * Leg subgroup mapping.
- *
- * These are deliberately separate from the primary muscle map.
- * The main analytics still see these as `Legs`, while the UI
- * can break them down into specific leg regions.
+/**
+ * Specific exercise → leg subgroup mapping.
  */
 const LEG_SUBGROUP_MAP: Record<
   string,
@@ -672,6 +681,11 @@ const LEG_SUBGROUP_MAP: Record<
   "calf raise": "Calves",
 };
 
+/**
+ * Returns the primary + optional secondary target.
+ *
+ * Specific/exact mappings always beat generic fallbacks.
+ */
 export function getExerciseTargets(
   exerciseName: string
 ): ExerciseTarget | null {
@@ -684,9 +698,7 @@ export function getExerciseTargets(
     return null;
   }
 
-  /*
-   * Exact matches always win.
-   */
+  // Exact match first.
   const exact =
     EXERCISE_TARGET_MAP[
       normalized
@@ -697,19 +709,15 @@ export function getExerciseTargets(
   }
 
   /*
-   * CRITICAL:
-   * When using substring matching, always match the
-   * longest/specific exercise name first.
+   * Longest match first.
    *
-   * This prevents:
-   *
-   * Romanian Deadlift
-   *       ↓
-   * generic "deadlift" → Back
-   *
-   * from overriding:
+   * This is important for:
    *
    * Romanian Deadlift → Legs
+   *
+   * instead of:
+   *
+   * Romanian Deadlift → generic "deadlift" → Back
    */
   const matchingKeys =
     Object.keys(
@@ -735,8 +743,8 @@ export function getExerciseTargets(
   }
 
   /*
-   * Specific leg fallbacks MUST happen before
-   * the generic deadlift fallback.
+   * Specific leg fallbacks must happen
+   * before the generic deadlift fallback.
    */
   if (
     normalized.includes(
@@ -745,9 +753,7 @@ export function getExerciseTargets(
     normalized.includes(
       "romanian dl"
     ) ||
-    normalized.includes(
-      "rdl"
-    ) ||
+    normalized.includes("rdl") ||
     normalized.includes(
       "stiff leg deadlift"
     ) ||
@@ -774,12 +780,8 @@ export function getExerciseTargets(
   }
 
   if (
-    normalized.includes(
-      "calf"
-    ) ||
-    normalized.includes(
-      "calves"
-    )
+    normalized.includes("calf") ||
+    normalized.includes("calves")
   ) {
     return {
       primary: "Legs",
@@ -800,9 +802,7 @@ export function getExerciseTargets(
   }
 
   if (
-    normalized.includes(
-      "squat"
-    ) ||
+    normalized.includes("squat") ||
     normalized.includes(
       "leg press"
     ) ||
@@ -811,23 +811,18 @@ export function getExerciseTargets(
     ) ||
     normalized.includes(
       "split squat"
-    )
+    ) ||
+    normalized.includes("lunge")
   ) {
     return {
       primary: "Legs",
     };
   }
 
-  /*
-   * Generic fallbacks.
-   */
+  // Generic fallbacks.
   if (
-    normalized.includes(
-      "curl"
-    ) ||
-    normalized.includes(
-      "21s"
-    )
+    normalized.includes("curl") ||
+    normalized.includes("21s")
   ) {
     return {
       primary: "Biceps",
@@ -841,9 +836,7 @@ export function getExerciseTargets(
     normalized.includes(
       "pushdown"
     ) ||
-    normalized.includes(
-      "skull"
-    )
+    normalized.includes("skull")
   ) {
     return {
       primary: "Triceps",
@@ -851,9 +844,7 @@ export function getExerciseTargets(
   }
 
   if (
-    normalized.includes(
-      "press"
-    ) &&
+    normalized.includes("press") &&
     (
       normalized.includes(
         "bench"
@@ -884,9 +875,7 @@ export function getExerciseTargets(
   }
 
   if (
-    normalized.includes(
-      "row"
-    ) ||
+    normalized.includes("row") ||
     normalized.includes(
       "pulldown"
     ) ||
@@ -904,10 +893,9 @@ export function getExerciseTargets(
   }
 
   /*
-   * Generic deadlift is intentionally AFTER all
-   * specific leg deadlift checks.
+   * Generic deadlift deliberately comes AFTER
+   * the RDL-specific checks.
    *
-   * Therefore:
    * Deadlift → Back
    * RDL → Legs
    */
@@ -925,15 +913,9 @@ export function getExerciseTargets(
   }
 
   if (
-    normalized.includes(
-      "squat"
-    ) ||
-    normalized.includes(
-      "leg"
-    ) ||
-    normalized.includes(
-      "calf"
-    )
+    normalized.includes("squat") ||
+    normalized.includes("leg") ||
+    normalized.includes("calf")
   ) {
     return {
       primary: "Legs",
@@ -943,6 +925,11 @@ export function getExerciseTargets(
   return null;
 }
 
+/**
+ * Returns the specific leg subgroup for a leg exercise.
+ *
+ * Returns null for non-leg exercises.
+ */
 export function getLegSubGroupForExercise(
   exerciseName: string
 ): LegSubGroup | null {
@@ -955,15 +942,15 @@ export function getLegSubGroupForExercise(
     return null;
   }
 
-  /*
-   * Only assign a leg subgroup when the exercise's
-   * PRIMARY target is Legs.
-   */
   const target =
     getExerciseTargets(
       exerciseName
     );
 
+  /*
+   * Only exercises whose PRIMARY muscle is Legs
+   * are eligible for a leg subgroup.
+   */
   if (
     !target ||
     target.primary !== "Legs"
@@ -971,6 +958,7 @@ export function getLegSubGroupForExercise(
     return null;
   }
 
+  // Exact subgroup match first.
   const exact =
     LEG_SUBGROUP_MAP[
       normalized
@@ -980,6 +968,7 @@ export function getLegSubGroupForExercise(
     return exact;
   }
 
+  // Longest subgroup match first.
   const matchingKeys =
     Object.keys(
       LEG_SUBGROUP_MAP
@@ -1003,16 +992,10 @@ export function getLegSubGroupForExercise(
     ];
   }
 
-  /*
-   * Common Hevy naming variations.
-   */
+  // Common Hevy variations.
   if (
-    normalized.includes(
-      "calf"
-    ) ||
-    normalized.includes(
-      "calves"
-    )
+    normalized.includes("calf") ||
+    normalized.includes("calves")
   ) {
     return "Calves";
   }
@@ -1021,9 +1004,7 @@ export function getLegSubGroupForExercise(
     normalized.includes(
       "romanian"
     ) ||
-    normalized.includes(
-      "rdl"
-    ) ||
+    normalized.includes("rdl") ||
     normalized.includes(
       "stiff leg"
     ) ||
@@ -1047,17 +1028,13 @@ export function getLegSubGroupForExercise(
     normalized.includes(
       "glute bridge"
     ) ||
-    normalized.includes(
-      "glute"
-    )
+    normalized.includes("glute")
   ) {
     return "Glutes";
   }
 
   if (
-    normalized.includes(
-      "squat"
-    ) ||
+    normalized.includes("squat") ||
     normalized.includes(
       "leg press"
     ) ||
@@ -1067,9 +1044,7 @@ export function getLegSubGroupForExercise(
     normalized.includes(
       "split squat"
     ) ||
-    normalized.includes(
-      "lunge"
-    )
+    normalized.includes("lunge")
   ) {
     return "Quads";
   }
@@ -1077,12 +1052,10 @@ export function getLegSubGroupForExercise(
   return null;
 }
 
-/*
- * Backwards-compatible primary muscle helper.
+/**
+ * Backwards-compatible helper.
  *
- * IMPORTANT:
- * Secondary muscles are NOT returned here.
- * Training Momentum uses only this primary result.
+ * Training Momentum deliberately uses ONLY the primary muscle.
  */
 export function getMuscleGroupForExercise(
   exerciseName: string
