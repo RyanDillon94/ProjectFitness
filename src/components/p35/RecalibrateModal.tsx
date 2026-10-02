@@ -1,4 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,6 +19,31 @@ import { toast } from "sonner";
 import { APP_NAME } from "@/lib/config";
 import { getPlan, savePlan } from "@/lib/planEngine";
 import type { PlanState } from "@/lib/planTypes";
+
+// ============================================================
+// PERFORMANCE
+// ============================================================
+
+const MODEL_COOLDOWN_MS = 60_000;
+const MODEL_TIMEOUT_MS = 7_000;
+
+const MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+];
+
+// ============================================================
+// MODULE CACHE
+// ============================================================
+
+const systemPromptCache = new WeakMap<object, string>();
+const modelCooldowns = new Map<string, number>();
 
 // ============================================================
 // FORMATTED AI MESSAGE
@@ -45,8 +75,10 @@ function FormattedMessage({ text }: { text: string }) {
           <div key={idx} className="space-y-1.5">
             {subItems.map((sub, sIdx) => {
               const isNumberedHeader = /^\*\*\d+\./.test(sub);
-
-              const isBullet = sub.startsWith("* ") || sub.startsWith("- ") || sub.startsWith("• ");
+              const isBullet =
+                sub.startsWith("* ") ||
+                sub.startsWith("- ") ||
+                sub.startsWith("• ");
 
               const cleanSub = sub.replace(/^[*•–-\s]+/, "");
 
@@ -61,18 +93,26 @@ function FormattedMessage({ text }: { text: string }) {
                         : "font-normal"
                   }
                 >
-                  {isBullet && <span className="text-primary mt-1">•</span>}
+                  {isBullet && (
+                    <span className="text-primary mt-1">•</span>
+                  )}
 
                   <span className="flex-1">
-                    {cleanSub.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-                      part.startsWith("**") && part.endsWith("**") ? (
-                        <strong key={i} className="text-primary font-semibold">
-                          {part.slice(2, -2)}
-                        </strong>
-                      ) : (
-                        <span key={i}>{part}</span>
-                      ),
-                    )}
+                    {cleanSub
+                      .split(/(\*\*[^*]+\*\*)/g)
+                      .map((part, i) =>
+                        part.startsWith("**") &&
+                        part.endsWith("**") ? (
+                          <strong
+                            key={i}
+                            className="text-primary font-semibold"
+                          >
+                            {part.slice(2, -2)}
+                          </strong>
+                        ) : (
+                          <span key={i}>{part}</span>
+                        ),
+                      )}
                   </span>
                 </p>
               );
@@ -99,73 +139,25 @@ type PendingUpdate = {
 };
 
 // ============================================================
-// COMPONENT
+// SYSTEM PROMPT
 // ============================================================
 
-export function RecalibrateModal() {
-  const [isOpen, setIsOpen] = useState(false);
+function buildSystemPrompt(): string {
+  const plan = getPlan();
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // WeakMap keeps this cheap when the exact same object is reused.
+  const cached = systemPromptCache.get(plan as object);
+  if (cached) return cached;
 
-  const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const currentProfile = JSON.stringify(plan);
 
-  const [pendingUpdate, setPendingUpdate] = useState<PendingUpdate | null>(null);
-
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // ============================================================
-  // AUTO-SCROLL
-  // ============================================================
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isTyping, pendingUpdate]);
-
-  // ============================================================
-  // TEXTAREA RESIZE
-  // ============================================================
-
-  const handleInputResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-
-    const target = e.target;
-
-    target.style.height = "auto";
-
-    target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
-  };
-
-  // ============================================================
-  // RESET TEXTAREA HEIGHT
-  // ============================================================
-
-  const resetTextarea = () => {
-    setInput("");
-
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
-  };
-
-  // ============================================================
-  // SYSTEM PROMPT
-  // ============================================================
-
-  const getSystemPrompt = () => {
-    const currentProfile = JSON.stringify(getPlan(), null, 2);
-
-    return `You are the ${APP_NAME} performance coach.
+  const prompt = `You are the ${APP_NAME} performance coach.
 
 You are helping the athlete recalibrate their existing roadmap.
 
 The protocol below is the live engine state. Every phase, block, start/end date,
 daily target and habit in it drives the app directly, so any structural change
-(shifting dates for a holiday, advancing a phase, switching from a cut to a bulk,
-adjusting calorie floors or ceilings) must be expressed as an edit to this object.
+must be expressed as an edit to this object.
 
 Your job is NOT to blindly obey requests.
 
@@ -189,67 +181,55 @@ Do not automatically change dates because the athlete asks for them.
 Instead:
 
 1. Understand the actual problem.
-
 2. Consider the relevant evidence and current protocol.
-
-3. Identify which metric, behaviour, target, or structural element is actually appropriate to adjust.
-
-4. Explain your reasoning clearly.
-
+3. Identify what should actually change.
+4. Explain the reasoning clearly.
 5. Propose a specific change.
+6. Ask the athlete to explicitly confirm it.
 
-6. Ask the athlete to explicitly confirm the proposed change.
+Do NOT generate JSON until the athlete explicitly confirms.
 
-Do NOT generate JSON until the athlete has explicitly confirmed the proposed change.
-
-Examples of explicit confirmation include:
+Explicit confirmation examples:
 
 "Yes"
-
 "Do it"
-
 "Apply that"
-
 "Sounds good"
-
 "Go ahead"
-
 "Make that change"
 
-If the athlete has NOT confirmed the proposed change, continue the conversation normally.
+If the athlete has NOT confirmed, continue normally.
 
 ============================================================
 IMPORTANT
 ============================================================
 
-The user is allowed to disagree with your recommendation.
+The athlete is allowed to disagree.
 
 If they disagree, discuss the alternative rather than immediately applying it.
-
-The goal is to formulate the appropriate change together.
 
 ============================================================
 FINAL JSON
 ============================================================
 
-ONLY after the athlete has explicitly confirmed the proposed change should you output the complete updated protocol.
+ONLY after explicit confirmation output the complete updated protocol.
 
 The updated protocol MUST:
 
 - Maintain the exact same JSON schema.
-- Preserve all existing information unless the athlete explicitly requested a change.
-- Keep phase and block start/end dates in YYYY-MM-DD form, contiguous and in order.
-- When pausing or shifting the plan, offset the affected block dates rather than deleting blocks.
-- Preserve all unrelated values.
+- Preserve existing information unless explicitly changed.
+- Keep phase and block dates in YYYY-MM-DD form.
+- Keep dates contiguous and in order.
+- When pausing or shifting the plan, offset affected block dates.
+- Preserve unrelated values.
 - Keep habits as daily actionable behaviours.
 - Keep dailyTargets fully populated.
-- Keep the roadmap structure intact unless the athlete explicitly requested a structural change.
+- Keep the roadmap structure intact unless explicitly changed.
 
 When producing the final update:
 
-1. Briefly state what has been agreed.
-
-2. Immediately afterwards output the COMPLETE updated JSON object inside:
+1. Briefly state what was agreed.
+2. Immediately output the COMPLETE updated JSON object inside:
 
 \`\`\`json
 {
@@ -257,7 +237,7 @@ When producing the final update:
 }
 \`\`\`
 
-Do not make changes to localStorage yourself. The application will handle saving after the athlete reviews the proposed update.
+Do not modify localStorage. The application handles saving.
 
 ============================================================
 FORMATTING
@@ -269,245 +249,451 @@ Use blank lines between sections.
 
 Do not squash numbered points together.
 
-Do not output JSON unless the athlete has explicitly confirmed the proposed change.`;
-  };
+Do not output JSON unless the athlete explicitly confirmed the proposed change.`;
+
+  systemPromptCache.set(plan as object, prompt);
+
+  return prompt;
+}
+
+// ============================================================
+// FETCH WITH TIMEOUT
+// ============================================================
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    timeoutMs,
+  );
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+// ============================================================
+// MODEL COOLDOWN
+// ============================================================
+
+function isCoolingDown(model: string): boolean {
+  const expires = modelCooldowns.get(model);
+
+  if (!expires) return false;
+
+  if (Date.now() >= expires) {
+    modelCooldowns.delete(model);
+    return false;
+  }
+
+  return true;
+}
+
+function cooldown(model: string) {
+  modelCooldowns.set(model, Date.now() + MODEL_COOLDOWN_MS);
+}
+
+// ============================================================
+// GEMINI REQUEST
+// ============================================================
+
+async function callGemini(
+  apiKey: string,
+  messages: ChatMessage[],
+): Promise<string> {
+  const contents = messages.slice(-8).map((message) => ({
+    role: message.role,
+    parts: [{ text: message.text }],
+  }));
+
+  const body = JSON.stringify({
+    systemInstruction: {
+      parts: [{ text: buildSystemPrompt() }],
+    },
+    contents,
+    generationConfig: {
+      temperature: 0.7,
+    },
+  });
+
+  let lastError = "Gemini request failed.";
+
+  for (const model of MODELS) {
+    if (isCoolingDown(model)) continue;
+
+    try {
+      const response = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body,
+        },
+        MODEL_TIMEOUT_MS,
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        const reply =
+          data.candidates?.[0]?.content?.parts
+            ?.map((part: any) =>
+              typeof part?.text === "string"
+                ? part.text
+                : "",
+            )
+            .join("")
+            .trim() || "";
+
+        if (reply) {
+          return reply;
+        }
+
+        lastError = `${model} returned an empty response.`;
+        continue;
+      }
+
+      lastError =
+        data.error?.message ||
+        `HTTP ${response.status} from ${model}`;
+
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(lastError);
+      }
+
+      if (response.status === 429) {
+        cooldown(model);
+        continue;
+      }
+
+      continue;
+    } catch (error) {
+      if (
+        error instanceof DOMException &&
+        error.name === "AbortError"
+      ) {
+        lastError = `${model} timed out.`;
+        continue;
+      }
+
+      if (error instanceof Error) {
+        lastError = error.message;
+
+        if (
+          error.message.includes("API key") ||
+          error.message.includes("401") ||
+          error.message.includes("403")
+        ) {
+          throw error;
+        }
+      }
+
+      continue;
+    }
+  }
+
+  throw new Error(
+    `All Gemini models failed. ${lastError}`,
+  );
+}
+
+// ============================================================
+// COMPONENT
+// ============================================================
+
+export function RecalibrateModal() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [pendingUpdate, setPendingUpdate] =
+    useState<PendingUpdate | null>(null);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef =
+    useRef<HTMLTextAreaElement>(null);
+
+  // ============================================================
+  // AUTO SCROLL
+  // ============================================================
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const el = scrollRef.current;
+    if (!el) return;
+
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, [
+    isOpen,
+    messages.length,
+    isTyping,
+    pendingUpdate,
+  ]);
+
+  // ============================================================
+  // INPUT
+  // ============================================================
+
+  const resetTextarea = useCallback(() => {
+    setInput("");
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  }, []);
+
+  const handleInputResize = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+
+      setInput(value);
+
+      e.target.style.height = "auto";
+      e.target.style.height =
+        `${Math.min(e.target.scrollHeight, 120)}px`;
+    },
+    [],
+  );
 
   // ============================================================
   // OPEN / CLOSE
   // ============================================================
 
-  const handleOpenChange = (open: boolean) => {
-    setIsOpen(open);
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      setIsOpen(open);
 
-    if (open && messages.length === 0) {
-  setMessages([
-    {
-      role: "model",
-      text: "Coach online. What are we recalibrating today?",
-    },
-    {
-      role: "model",
-      text: "Remember... don't be making changes just because you're gay and can't keep up with the plan, this recalibrate function is for legit plan updates only.",
-    },
-  ]);
-}
-
-
-    if (!open) {
-      setPendingUpdate(null);
-      setInput("");
-
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
+      if (open && messages.length === 0) {
+        setMessages([
+          {
+            role: "model",
+            text:
+              "Coach online. What are we recalibrating today?",
+          },
+          {
+            role: "model",
+            text:
+              "Remember... this recalibrate function is for legitimate plan updates only. Don't change the protocol just because you're struggling with it.",
+          },
+        ]);
       }
-    }
-  };
+
+      if (!open) {
+        setPendingUpdate(null);
+        resetTextarea();
+      }
+    },
+    [messages.length, resetTextarea],
+  );
 
   // ============================================================
-  // SEND MESSAGE
+  // SEND
   // ============================================================
 
-  const sendMessage = async (text: string) => {
-    if (!text.trim() || isTyping || pendingUpdate) {
-      return;
-    }
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
 
-    const apiKey = localStorage.getItem("p35_gemini_api_key") || "";
+      if (
+        !trimmed ||
+        isTyping ||
+        pendingUpdate
+      ) {
+        return;
+      }
 
-    if (!apiKey) {
-      toast.error("Gemini API key missing.");
-      return;
-    }
+      const apiKey =
+        localStorage.getItem("p35_gemini_api_key") ||
+        "";
 
-    const newMsgs: ChatMessage[] = [
-      ...messages,
-      {
+      if (!apiKey) {
+        toast.error("Gemini API key missing.");
+        return;
+      }
+
+      const userMessage: ChatMessage = {
         role: "user",
-        text: text.trim(),
-      },
-    ];
+        text: trimmed,
+      };
 
-    setMessages(newMsgs);
-    resetTextarea();
-    setIsTyping(true);
+      const nextMessages = [
+        ...messages,
+        userMessage,
+      ];
 
-    const models = [
-      "gemini-3.8-flash",
-      "gemini-3.7-flash",
-      "gemini-3.6-flash",
-      "gemini-3.5-flash",
-      "gemini-3.5-flash-lite",
-      "gemini-3.1-flash-lite",
-      "gemini-2.5-flash",
-      "gemini-2.5-flash-lite",
-    ];
+      setMessages(nextMessages);
+      resetTextarea();
+      setIsTyping(true);
 
-    let reply = "";
-    let success = false;
+      try {
+        const reply = await callGemini(
+          apiKey,
+          nextMessages,
+        );
 
-    try {
-      const contents = newMsgs.map((m) => ({
-        role: m.role,
-        parts: [{ text: m.text }],
-      }));
+        const jsonMatch = reply.match(
+          /```json\s*([\s\S]*?)```/,
+        );
 
-      for (const model of models) {
-        try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+        if (jsonMatch) {
+          try {
+            const updatedProfile =
+              JSON.parse(
+                (jsonMatch[1] ?? "").trim(),
+              );
 
-          const res = await fetch(url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-goog-api-key": apiKey,
-            },
-            body: JSON.stringify({
-              systemInstruction: {
-                parts: [
-                  {
-                    text: getSystemPrompt(),
-                  },
-                ],
+            const explanation = reply
+              .replace(
+                /```json\s*[\s\S]*?```/g,
+                "",
+              )
+              .trim();
+
+            setPendingUpdate({
+              profile: updatedProfile,
+              explanation:
+                explanation ||
+                "The agreed protocol changes are ready for review.",
+            });
+
+            setMessages([
+              ...nextMessages,
+              {
+                role: "model",
+                text:
+                  "I've got the agreed changes ready. Review them below before applying anything.",
               },
-              contents,
-              generationConfig: {
-                temperature: 0.7,
-              },
-            }),
-          });
+            ]);
 
-          const data = await res.json().catch(() => ({}));
+            return;
+          } catch (error) {
+            console.error(
+              "Failed to parse AI JSON",
+              error,
+              reply,
+            );
 
-          if (res.ok) {
-            const candidateText =
-              data.candidates?.[0]?.content?.parts
-                ?.map((part: any) => part.text || "")
-                .join("")
-                .trim() || "";
+            toast.error(
+              "The coach generated invalid protocol data. Ask it to try again.",
+            );
 
-            if (candidateText) {
-              reply = candidateText;
-              success = true;
-              break;
-            }
+            return;
           }
-        } catch (modelError) {
-          console.warn(`Gemini model ${model} failed`, modelError);
         }
+
+        setMessages([
+          ...nextMessages,
+          {
+            role: "model",
+            text: reply,
+          },
+        ]);
+      } catch (error) {
+        console.error(
+          "Gemini request failed:",
+          error,
+        );
+
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Failed to connect to Coach.",
+        );
+      } finally {
+        setIsTyping(false);
       }
-
-      if (!success) {
-        throw new Error("All Gemini model endpoints failed.");
-      }
-
-      // ========================================================
-      // CHECK FOR JSON UPDATE
-      // ========================================================
-
-      const jsonMatch = reply.match(/```json\s*([\s\S]*?)```/);
-
-      if (jsonMatch) {
-        const jsonString = (jsonMatch[1] ?? "").trim();
-
-        try {
-          const updatedProfile = JSON.parse(jsonString);
-
-          const explanation = reply.replace(/```json\s*[\s\S]*?```/g, "").trim();
-
-          setPendingUpdate({
-            profile: updatedProfile,
-            explanation: explanation || "The agreed protocol changes are ready for review.",
-          });
-
-          setMessages([
-            ...newMsgs,
-            {
-              role: "model",
-              text: "I've got the agreed changes ready. Review them below before applying anything.",
-            },
-          ]);
-
-          return;
-        } catch (error) {
-          console.error("Failed to parse AI JSON", error, reply);
-
-          toast.error("The coach generated invalid protocol data. Ask it to try again.");
-        }
-      }
-
-      // ========================================================
-      // NORMAL RESPONSE
-      // ========================================================
-
-      setMessages([
-        ...newMsgs,
-        {
-          role: "model",
-          text: reply,
-        },
-      ]);
-    } catch (error) {
-      console.error("Gemini request failed:", error);
-
-      toast.error(
-        error instanceof Error ? error.message : "Failed to connect to Coach. Check your API key.",
-      );
-    } finally {
-      setIsTyping(false);
-    }
-  };
+    },
+    [
+      messages,
+      isTyping,
+      pendingUpdate,
+      resetTextarea,
+    ],
+  );
 
   // ============================================================
-  // APPLY UPDATE
+  // APPLY
   // ============================================================
 
-  const applyPendingUpdate = () => {
-    if (!pendingUpdate) {
-      return;
-    }
+  const applyPendingUpdate = useCallback(() => {
+    if (!pendingUpdate) return;
 
     try {
-      savePlan({ ...getPlan(), ...(pendingUpdate.profile as Partial<PlanState>) } as PlanState);
+      savePlan({
+        ...getPlan(),
+        ...(pendingUpdate.profile as Partial<PlanState>),
+      } as PlanState);
 
-      toast.success("Protocol Recalibrated. Reloading Command Centre.");
+      toast.success(
+        "Protocol Recalibrated. Reloading Command Centre.",
+      );
 
       setPendingUpdate(null);
       setIsOpen(false);
 
-      setTimeout(() => {
+      window.setTimeout(() => {
         window.location.reload();
-      }, 500);
+      }, 250);
     } catch (error) {
-      console.error("Failed to save protocol", error);
+      console.error(
+        "Failed to save protocol",
+        error,
+      );
 
-      toast.error("Could not save the protocol changes.");
+      toast.error(
+        "Could not save the protocol changes.",
+      );
     }
-  };
+  }, [pendingUpdate]);
 
   // ============================================================
-  // CANCEL UPDATE
+  // CANCEL
   // ============================================================
 
-  const cancelPendingUpdate = () => {
+  const cancelPendingUpdate = useCallback(() => {
     setPendingUpdate(null);
 
     setMessages((current) => [
       ...current,
       {
         role: "model",
-        text: "No changes applied. The existing protocol remains untouched. What would you like to reconsider?",
+        text:
+          "No changes applied. The existing protocol remains untouched. What would you like to reconsider?",
       },
     ]);
-  };
+  }, []);
 
   // ============================================================
   // RENDER
   // ============================================================
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={handleOpenChange}
+    >
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2 text-xs">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 text-xs"
+        >
           <Settings2 className="size-4" />
           Recalibrate Plan
         </Button>
@@ -528,10 +714,6 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
           gap-0
         "
       >
-        {/* ====================================================
-            HEADER
-        ==================================================== */}
-
         <DialogHeader className="shrink-0 px-4 pt-5 pb-4 pr-12 border-b border-border/40">
           <DialogTitle className="flex items-center gap-2 text-primary">
             <Settings2 className="size-5" />
@@ -542,10 +724,6 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
             Collaborate with your coach before making any changes to the protocol.
           </DialogDescription>
         </DialogHeader>
-
-        {/* ====================================================
-            CHAT
-        ==================================================== */}
 
         <div
           ref={scrollRef}
@@ -561,8 +739,12 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
         >
           {messages.map((message, index) => (
             <div
-              key={index}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              key={`${message.role}-${index}`}
+              className={`flex ${
+                message.role === "user"
+                  ? "justify-end"
+                  : "justify-start"
+              }`}
             >
               <div
                 className={`
@@ -578,25 +760,31 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
                   }
                 `}
               >
-                {message.role === "model" ? <FormattedMessage text={message.text} /> : message.text}
+                {message.role === "model" ? (
+                  <FormattedMessage
+                    text={message.text}
+                  />
+                ) : (
+                  message.text
+                )}
               </div>
             </div>
           ))}
-
-          {/* ==================================================
-              PENDING UPDATE
-          ================================================== */}
 
           {pendingUpdate && (
             <div className="rounded-lg border border-primary/30 bg-surface-2/40 p-3 space-y-3">
               <div className="flex items-center gap-2">
                 <Check className="size-4 text-primary" />
 
-                <p className="text-sm font-semibold text-foreground">Protocol change ready</p>
+                <p className="text-sm font-semibold">
+                  Protocol change ready
+                </p>
               </div>
 
               <div className="text-sm text-muted-foreground leading-relaxed">
-                <FormattedMessage text={pendingUpdate.explanation} />
+                <FormattedMessage
+                  text={pendingUpdate.explanation}
+                />
               </div>
 
               <div className="flex gap-2 pt-1">
@@ -610,17 +798,17 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
                   Don't Apply
                 </Button>
 
-                <Button size="sm" className="flex-1" onClick={applyPendingUpdate}>
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  onClick={applyPendingUpdate}
+                >
                   <Check className="size-4 mr-1.5" />
                   Apply Changes
                 </Button>
               </div>
             </div>
           )}
-
-          {/* ==================================================
-              TYPING INDICATOR
-          ================================================== */}
 
           {isTyping && (
             <div className="flex justify-start">
@@ -631,13 +819,6 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
             </div>
           )}
         </div>
-
-        {/* ====================================================
-            MESSAGE INPUT
-
-            This intentionally mirrors the working Onboarding
-            component so Android keyboard behaviour matches.
-        ==================================================== */}
 
         <DialogFooter
           className="
@@ -666,13 +847,18 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
                 ref={textareaRef}
                 rows={1}
                 value={input}
-                disabled={isTyping || !!pendingUpdate}
+                disabled={
+                  isTyping ||
+                  !!pendingUpdate
+                }
                 onChange={handleInputResize}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (
+                    e.key === "Enter" &&
+                    !e.shiftKey
+                  ) {
                     e.preventDefault();
-
-                    sendMessage(input);
+                    void sendMessage(input);
                   }
                 }}
                 placeholder={
@@ -699,8 +885,14 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
               <Button
                 size="icon"
                 className="size-9 shrink-0 mb-0.5 rounded-lg"
-                onClick={() => sendMessage(input)}
-                disabled={!input.trim() || isTyping || !!pendingUpdate}
+                onClick={() =>
+                  void sendMessage(input)
+                }
+                disabled={
+                  !input.trim() ||
+                  isTyping ||
+                  !!pendingUpdate
+                }
               >
                 <Send className="size-4" />
               </Button>
@@ -711,3 +903,4 @@ Do not output JSON unless the athlete has explicitly confirmed the proposed chan
     </Dialog>
   );
 }
+
