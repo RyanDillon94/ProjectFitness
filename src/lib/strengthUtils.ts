@@ -20,15 +20,14 @@ export type TopExercise = {
   // Best e1RM achieved during the current 7-day window.
   currentE1RM: number;
 
-  // Best e1RM achieved during the previous 21 days
-  // inside the trailing 28-day window.
+  // Best e1RM achieved during the previous 21 days.
   baselineE1RM: number;
 
   // Current e1RM vs baseline e1RM.
   percentChange: number;
 
   // Current 7-day volume vs average weekly
-  // volume across the trailing 28 days.
+  // volume across the previous 4 completed weeks.
   volumeChange: number;
 
   // Actual current 7-day volume.
@@ -42,7 +41,8 @@ export type LegSubGroupSummary = {
   // Actual volume = weight × reps.
   currentVolume: number;
 
-  // Average weekly volume across 28 days.
+  // Average weekly volume across the previous
+  // 4 completed weeks.
   baselineVolume: number;
 
   topExercises: TopExercise[];
@@ -52,10 +52,11 @@ export type MuscleGroupSummary = {
   strengthChange: number;
   volumeChange: number;
 
-  // Actual volume during the last 7 days.
+  // Actual volume during the current 7-day window.
   currentVolume: number;
 
-  // Average weekly volume during the trailing 28 days.
+  // Average weekly volume across the previous
+  // 4 completed weeks.
   baselineVolume: number;
 
   topExercises: TopExercise[];
@@ -237,6 +238,55 @@ function calculatePercentChange(
   );
 }
 
+/**
+ * Calculates volume change using:
+ *
+ * CURRENT:
+ *   Most recent 7 days.
+ *
+ * BASELINE:
+ *   The previous 28 days ONLY.
+ *   The current 7-day window is completely excluded.
+ *
+ * This gives a true:
+ *
+ *   Current Week vs Previous 4-Week Average
+ *
+ * comparison.
+ *
+ * If there was no activity during the previous
+ * 4 weeks but there is activity now, the change
+ * is treated as +100% rather than producing an
+ * artificial +300% caused by the current week
+ * contaminating its own baseline.
+ */
+function calculateVolumeChange(
+  currentVolume: number,
+  previousFourWeekVolume: number
+): number {
+  if (
+    previousFourWeekVolume === 0 &&
+    currentVolume === 0
+  ) {
+    return 0;
+  }
+
+  if (
+    previousFourWeekVolume === 0 &&
+    currentVolume > 0
+  ) {
+    return 100;
+  }
+
+  const baselineWeeklyVolume =
+    previousFourWeekVolume / 4;
+
+  return calculatePercentChange(
+    currentVolume,
+    baselineWeeklyVolume
+  );
+}
+
 export function calculateTrainingProgress(
   sets: WorkoutSet[]
 ): ProgressReport {
@@ -257,8 +307,13 @@ export function calculateTrainingProgress(
     86_400_000;
 
   /*
-   * Acute window:
-   * Last 7 days.
+   * ============================================================
+   * CURRENT WEEK
+   * ============================================================
+   *
+   * Most recent 7 days.
+   *
+   * This is the "current week" being measured.
    */
   const acuteWindowStart =
     now -
@@ -266,17 +321,34 @@ export function calculateTrainingProgress(
       MS_PER_DAY;
 
   /*
-   * Chronic window:
-   * Trailing 28 days.
+   * ============================================================
+   * PREVIOUS FOUR WEEKS
+   * ============================================================
+   *
+   * Previous 28 days before the current
+   * 7-day window.
+   *
+   * IMPORTANT:
+   * The current week is NOT included.
+   *
+   * Therefore:
+   *
+   * Current week = 7 days
+   * Baseline = previous 28 days
+   *
+   * Total data span = 35 days.
    */
-  const chronicWindowStart =
+  const baselineWindowStart =
     now -
-    28 *
+    35 *
       MS_PER_DAY;
 
+  const baselineWindowEnd =
+    acuteWindowStart;
+
   /*
-   * Only valid sets inside the trailing
-   * 28-day window are considered.
+   * Only valid sets inside the full
+   * 35-day comparison window are considered.
    */
   const validSets =
     sets.filter((s) => {
@@ -317,7 +389,7 @@ export function calculateTrainingProgress(
       return (
         !Number.isNaN(time) &&
         time >=
-          chronicWindowStart &&
+          baselineWindowStart &&
         time <= now
       );
     });
@@ -336,6 +408,10 @@ export function calculateTrainingProgress(
   }
 
   /*
+   * ============================================================
+   * EXERCISE DATA
+   * ============================================================
+   *
    * Each exercise is tracked independently.
    *
    * IMPORTANT:
@@ -363,6 +439,12 @@ export function calculateTrainingProgress(
     Legs: 0,
   };
 
+  /*
+   * Previous 4-week volume per muscle.
+   *
+   * This deliberately EXCLUDES the current
+   * 7-day acute window.
+   */
   const chronicVolumePerMuscle: Record<
     MuscleGroup,
     number
@@ -409,6 +491,17 @@ export function calculateTrainingProgress(
         time >=
         acuteWindowStart;
 
+      /*
+       * Only dates before the current 7-day
+       * window belong to the previous
+       * four-week baseline.
+       */
+      const isBaseline =
+        time >=
+          baselineWindowStart &&
+        time <
+          baselineWindowEnd;
+
       const e1rm =
         calculateE1RM(
           set.weight,
@@ -454,17 +547,8 @@ export function calculateTrainingProgress(
         )!;
 
       /*
-       * Every valid set belongs to the
-       * 28-day chronic dataset.
+       * CURRENT 7-DAY WINDOW
        */
-      entry.chronicSets += 1;
-      entry.chronicVolume +=
-        setVolume;
-
-      chronicVolumePerMuscle[
-        muscle
-      ] += setVolume;
-
       if (isAcute) {
         entry.acuteSets += 1;
         entry.acuteVolume +=
@@ -480,7 +564,7 @@ export function calculateTrainingProgress(
 
         /*
          * Best e1RM from the current
-         * 7-day acute window.
+         * 7-day window.
          */
         if (
           e1rm >
@@ -489,10 +573,28 @@ export function calculateTrainingProgress(
           entry.recentE1rm =
             e1rm;
         }
-      } else {
+      }
+
+      /*
+       * PREVIOUS 4-WEEK BASELINE
+       */
+      if (isBaseline) {
+        entry.chronicSets += 1;
+        entry.chronicVolume +=
+          setVolume;
+
+        chronicVolumePerMuscle[
+          muscle
+        ] += setVolume;
+
         /*
          * Best e1RM from the previous
-         * portion of the 28-day window.
+         * 21 days.
+         *
+         * Because the acute window is excluded,
+         * the strength baseline naturally uses
+         * the older portion of the comparison
+         * period.
          */
         if (
           e1rm >
@@ -548,7 +650,9 @@ export function calculateTrainingProgress(
     );
 
   /*
-   * Strength aggregation for each primary muscle.
+   * ============================================================
+   * STRENGTH AGGREGATION
+   * ============================================================
    */
   const muscleStrengthChanges: Record<
     MuscleGroup,
@@ -591,7 +695,9 @@ export function calculateTrainingProgress(
   };
 
   /*
-   * Create exercise-level metrics.
+   * ============================================================
+   * EXERCISE-LEVEL METRICS
+   * ============================================================
    */
   exerciseProgress.forEach(
     (data) => {
@@ -606,8 +712,10 @@ export function calculateTrainingProgress(
 
       /*
        * Normal case:
-       * current 7-day best vs previous
-       * 21-day baseline.
+       *
+       * Current 7-day best e1RM
+       * vs
+       * previous baseline e1RM.
        */
       if (
         data.baseE1rm > 0 &&
@@ -645,21 +753,19 @@ export function calculateTrainingProgress(
       }
 
       /*
-       * Exercise volume baseline:
+       * ========================================================
+       * EXERCISE VOLUME
+       * ========================================================
        *
-       * Entire trailing 28-day volume / 4
-       *
-       * This preserves the existing
-       * 7-day vs rolling-4-week logic.
+       * Current 7-day volume
+       * vs
+       * average weekly volume across the
+       * previous four completed weeks.
        */
-      const baselineVolume =
-        data.chronicVolume /
-        4;
-
       const volumeChange =
-        calculatePercentChange(
+        calculateVolumeChange(
           data.acuteVolume,
-          baselineVolume
+          data.chronicVolume
         );
 
       muscleStrengthChanges[
@@ -706,19 +812,19 @@ export function calculateTrainingProgress(
       0
     );
 
-  const totalChronicWeeklyAverage =
+  const totalPreviousFourWeekVolume =
     Object.values(
       chronicVolumePerMuscle
     ).reduce(
       (sum, value) =>
         sum + value,
       0
-    ) / 4;
+    );
 
   const overallVolumeChange =
-    calculatePercentChange(
+    calculateVolumeChange(
       totalAcuteVolume,
-      totalChronicWeeklyAverage
+      totalPreviousFourWeekVolume
     );
 
   /*
@@ -756,10 +862,19 @@ export function calculateTrainingProgress(
           group
         ];
 
-      const baselineVolume =
+      const previousFourWeekVolume =
         chronicVolumePerMuscle[
           group
-        ] / 4;
+        ];
+
+      /*
+       * Average weekly volume across the
+       * four completed weeks BEFORE the
+       * current week.
+       */
+      const baselineVolume =
+        previousFourWeekVolume /
+        4;
 
       const roundedBaselineVolume =
         Math.round(
@@ -767,9 +882,9 @@ export function calculateTrainingProgress(
         ) / 10;
 
       const volumeChange =
-        calculatePercentChange(
+        calculateVolumeChange(
           currentVolume,
-          baselineVolume
+          previousFourWeekVolume
         );
 
       /*
@@ -791,9 +906,8 @@ export function calculateTrainingProgress(
        * LEG SUBGROUPS
        * ========================================================
        *
-       * These are calculated DIRECTLY from the raw exercise
-       * volume data rather than reconstructing a baseline
-       * from percentages.
+       * These are calculated DIRECTLY from
+       * the raw exercise volume data.
        */
       const legSubGroups =
         createEmptyLegSubGroups();
@@ -834,9 +948,12 @@ export function calculateTrainingProgress(
               );
 
             /*
-             * Full trailing 28-day volume.
+             * Previous four-week volume.
+             *
+             * The current week is NOT included
+             * in this figure.
              */
-            const subgroupChronicVolume =
+            const subgroupPreviousFourWeekVolume =
               subgroupExercises.reduce(
                 (
                   sum,
@@ -851,16 +968,16 @@ export function calculateTrainingProgress(
              * Average weekly baseline.
              */
             const subgroupBaselineVolume =
-              subgroupChronicVolume /
+              subgroupPreviousFourWeekVolume /
               4;
 
             /*
              * Subgroup volume change.
              */
             const subgroupVolumeChange =
-              calculatePercentChange(
+              calculateVolumeChange(
                 subgroupCurrentVolume,
-                subgroupBaselineVolume
+                subgroupPreviousFourWeekVolume
               );
 
             /*
@@ -952,14 +1069,10 @@ export function calculateTrainingProgress(
                         100;
                     }
 
-                    const exerciseBaselineVolume =
-                      exercise.chronicVolume /
-                      4;
-
                     const exerciseVolumeChange =
-                      calculatePercentChange(
+                      calculateVolumeChange(
                         exercise.acuteVolume,
-                        exerciseBaselineVolume
+                        exercise.chronicVolume
                       );
 
                     return {
