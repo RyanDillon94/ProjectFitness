@@ -416,12 +416,12 @@ export function WeeklyTrendsAnalytics() {
    * EXERCISE TREND ROW
    * ============================================================
    *
-   * Fixed-width percentage columns ensure that every exercise
-   * row lines up vertically.
-   *
-   * Shows only:
+   * Shows:
    * - Strength/e1RM percentage change
    * - Volume percentage change
+   *
+   * NEW exercises:
+   * - Display NEW instead of +100%
    *
    * Raw e1RM and "e1RM"/"Vol" labels remain hidden.
    */
@@ -453,32 +453,34 @@ export function WeeklyTrendsAnalytics() {
 
         <span
           className={`w-14 text-right ${
-            e1rmPositive
-              ? "text-emerald-500 font-semibold"
-              : e1rmNegative
-                ? "text-rose-500 font-semibold"
-                : "text-muted-foreground font-semibold"
+            exercise.isNew
+              ? "text-primary font-semibold"
+              : e1rmPositive
+                ? "text-emerald-500 font-semibold"
+                : e1rmNegative
+                  ? "text-rose-500 font-semibold"
+                  : "text-muted-foreground font-semibold"
           }`}
         >
-          {exercise.percentChange > 0
-            ? "+"
-            : ""}
-          {exercise.percentChange}%
+          {exercise.isNew
+            ? "NEW"
+            : `${exercise.percentChange > 0 ? "+" : ""}${exercise.percentChange}%`}
         </span>
 
         <span
           className={`w-14 text-right ${
-            volumePositive
-              ? "text-emerald-500 font-semibold"
-              : volumeNegative
-                ? "text-rose-500 font-semibold"
-                : "text-muted-foreground font-semibold"
+            exercise.isNew
+              ? "text-primary font-semibold"
+              : volumePositive
+                ? "text-emerald-500 font-semibold"
+                : volumeNegative
+                  ? "text-rose-500 font-semibold"
+                  : "text-muted-foreground font-semibold"
           }`}
         >
-          {exercise.volumeChange > 0
-            ? "+"
-            : ""}
-          {exercise.volumeChange}%
+          {exercise.isNew
+            ? "NEW"
+            : `${exercise.volumeChange > 0 ? "+" : ""}${exercise.volumeChange}%`}
         </span>
       </div>
     );
@@ -518,7 +520,6 @@ export function WeeklyTrendsAnalytics() {
     <div className="w-full">
       {/* ========================================================
           CARD / TRIGGER
-          Matches the existing Project Ascension card UI.
           ======================================================== */}
 
       <Dialog
@@ -698,8 +699,6 @@ export function WeeklyTrendsAnalytics() {
                   ================================================== */}
 
               <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
-                {/* TABLE HEADER */}
-
                 <div className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   <span>
                     Muscle Groups
@@ -740,10 +739,6 @@ export function WeeklyTrendsAnalytics() {
                           key={group}
                           className="border-b border-border/40 last:border-0 pb-1"
                         >
-                          {/* ==================================================
-                              MAIN MUSCLE ROW
-                              ================================================== */}
-
                           <div
                             onClick={() =>
                               handleGroupToggle(
@@ -884,10 +879,6 @@ export function WeeklyTrendsAnalytics() {
                                           }
                                           className="border-b border-border/20 last:border-0"
                                         >
-                                          {/* ==================================================
-                                              LEG SUBGROUP ROW
-                                              ================================================== */}
-
                                           <div
                                             onClick={() => {
                                               if (
