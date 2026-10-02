@@ -25,7 +25,7 @@ import {
 } from "@/lib/strengthUtils";
 import {
   MUSCLE_GROUPS,
-  LEG_SUBGROUPS,
+  LEG_MUSCLE_GROUPS,
   LegSubGroup,
 } from "@/lib/strengthMapping";
 
@@ -33,16 +33,26 @@ export function WeeklyTrendsAnalytics() {
   const [isOpen, setIsOpen] =
     useState(false);
 
-  const [expandedGroup, setExpandedGroup] =
-    useState<string | null>(null);
+  const [
+    expandedGroup,
+    setExpandedGroup,
+  ] = useState<string | null>(
+    null
+  );
 
   const [
     expandedLegSubGroup,
     setExpandedLegSubGroup,
-  ] = useState<LegSubGroup | null>(
-    null
-  );
+  ] =
+    useState<LegSubGroup | null>(
+      null
+    );
 
+  /*
+   * ============================================================
+   * HEVY DATA
+   * ============================================================
+   */
   const sets: WorkoutSet[] =
     useMemo(() => {
       if (
@@ -138,21 +148,19 @@ export function WeeklyTrendsAnalytics() {
 
                 exerciseSets.forEach(
                   (s: any) => {
-                    if (
-                      !s
-                    ) {
+                    if (!s) {
                       return;
                     }
 
                     const rawWeight =
                       s.weightKg ??
                       s.weight ??
-                      s.weight_kg;
+                      s.weight_kg ??
+                      0;
 
                     const weight =
                       Number(
-                        rawWeight ??
-                          0
+                        rawWeight
                       );
 
                     const reps =
@@ -162,6 +170,7 @@ export function WeeklyTrendsAnalytics() {
                       );
 
                     if (
+                      exerciseName &&
                       weight > 0 &&
                       reps > 0
                     ) {
@@ -190,6 +199,11 @@ export function WeeklyTrendsAnalytics() {
       }
     }, [isOpen]);
 
+  /*
+   * ============================================================
+   * TRAINING PROGRESS
+   * ============================================================
+   */
   const progress =
     useMemo(
       () =>
@@ -199,6 +213,11 @@ export function WeeklyTrendsAnalytics() {
       [sets]
     );
 
+  /*
+   * ============================================================
+   * ADHERENCE TREND
+   * ============================================================
+   */
   const trendData =
     useMemo(() => {
       const weeks: {
@@ -466,8 +485,9 @@ export function WeeklyTrendsAnalytics() {
     }, [trendData]);
 
   /*
-   * Standard percentage badge used
-   * throughout the analytics.
+   * ============================================================
+   * CHANGE BADGE
+   * ============================================================
    */
   const renderChangeBadge = (
     val: number,
@@ -507,14 +527,16 @@ export function WeeklyTrendsAnalytics() {
   };
 
   /*
-   * Exercise-level presentation.
+   * ============================================================
+   * EXERCISE TREND ROW
+   * ============================================================
    *
-   * Deliberately shows only:
+   * Shows:
    *
    * +X.X% e1RM
    * +X.X% Vol
    *
-   * No weight/e1RM number is shown.
+   * No raw e1RM weight is displayed.
    */
   const renderExerciseTrend = (
     exercise: TopExercise,
@@ -594,6 +616,11 @@ export function WeeklyTrendsAnalytics() {
     );
   };
 
+  /*
+   * ============================================================
+   * GROUP TOGGLE
+   * ============================================================
+   */
   const handleGroupToggle = (
     group: string,
     hasActivity: boolean,
@@ -603,12 +630,19 @@ export function WeeklyTrendsAnalytics() {
       return;
     }
 
-    setExpandedGroup(
+    const nextExpanded =
       isExpanded
         ? null
-        : group
+        : group;
+
+    setExpandedGroup(
+      nextExpanded
     );
 
+    /*
+     * Close any currently-open leg subgroup
+     * when changing the main muscle group.
+     */
     if (
       group !== "Legs" ||
       isExpanded
@@ -797,7 +831,9 @@ export function WeeklyTrendsAnalytics() {
                 </div>
               </div>
 
-              {/* Muscle groups */}
+              {/* ==================================================
+                  MUSCLE GROUP TABLE
+                  ================================================== */}
               <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
                 <div className="flex items-center justify-between pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   <span>
@@ -842,7 +878,9 @@ export function WeeklyTrendsAnalytics() {
                           key={group}
                           className="border-b border-border/40 last:border-0 pb-1"
                         >
-                          {/* Main muscle row */}
+                          {/* ==================================================
+                              MAIN MUSCLE ROW
+                              ================================================== */}
                           <div
                             onClick={() =>
                               handleGroupToggle(
@@ -865,9 +903,26 @@ export function WeeklyTrendsAnalytics() {
                               </span>
 
                               {hasActivity &&
-                                data.topExercises
-                                  .length >
-                                  0 && (
+                                (
+                                  group ===
+                                    "Legs"
+                                    ? LEG_MUSCLE_GROUPS.some(
+                                        (
+                                          subGroup
+                                        ) =>
+                                          data
+                                            .legSubGroups[
+                                            subGroup
+                                          ]
+                                            .topExercises
+                                            .length >
+                                          0
+                                      )
+                                    : data
+                                        .topExercises
+                                        .length >
+                                      0
+                                ) && (
                                   <ChevronDown
                                     className={`size-3.5 text-muted-foreground transition-transform duration-200 ${
                                       isExpanded
@@ -898,7 +953,8 @@ export function WeeklyTrendsAnalytics() {
                           </div>
 
                           {/* ==================================================
-                              NORMAL MUSCLE GROUPS
+                              CHEST / BACK / SHOULDERS /
+                              BICEPS / TRICEPS
                               ================================================== */}
                           {isExpanded &&
                             group !==
@@ -925,14 +981,14 @@ export function WeeklyTrendsAnalytics() {
                             )}
 
                           {/* ==================================================
-                              LEGS
+                              LEGS → SUBGROUPS
                               ================================================== */}
                           {isExpanded &&
                             group ===
                               "Legs" && (
                               <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
                                 <div className="space-y-1">
-                                  {LEG_SUBGROUPS.map(
+                                  {LEG_MUSCLE_GROUPS.map(
                                     (
                                       subGroup
                                     ) => {
@@ -951,6 +1007,12 @@ export function WeeklyTrendsAnalytics() {
                                             0
                                         );
 
+                                      const hasExercises =
+                                        subData
+                                          .topExercises
+                                          .length >
+                                        0;
+
                                       const isSubExpanded =
                                         expandedLegSubGroup ===
                                         subGroup;
@@ -966,7 +1028,8 @@ export function WeeklyTrendsAnalytics() {
                                           <div
                                             onClick={() => {
                                               if (
-                                                !hasSubActivity
+                                                !hasSubActivity ||
+                                                !hasExercises
                                               ) {
                                                 return;
                                               }
@@ -978,13 +1041,15 @@ export function WeeklyTrendsAnalytics() {
                                               );
                                             }}
                                             className={`flex items-center justify-between text-xs py-2 px-2 rounded-md transition-colors ${
-                                              hasSubActivity
+                                              hasSubActivity &&
+                                              hasExercises
                                                 ? "cursor-pointer hover:bg-surface-2/80"
                                                 : "opacity-60"
                                             }`}
                                           >
                                             <div className="flex items-center gap-2 min-w-0">
-                                              {hasSubActivity ? (
+                                              {hasSubActivity &&
+                                              hasExercises ? (
                                                 <ChevronDown
                                                   className={`size-3 text-muted-foreground transition-transform duration-200 ${
                                                     isSubExpanded
@@ -1022,11 +1087,11 @@ export function WeeklyTrendsAnalytics() {
                                             </div>
                                           </div>
 
-                                          {/* Subgroup exercises */}
+                                          {/* ==================================================
+                                              SUBGROUP → EXERCISES
+                                              ================================================== */}
                                           {isSubExpanded &&
-                                            subData.topExercises
-                                              .length >
-                                              0 && (
+                                            hasExercises && (
                                               <div className="ml-4 mr-1 mb-2 px-2.5 py-2 rounded-md bg-surface-2/40 border border-border/30 space-y-1">
                                                 <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">
                                                   Top Exercises (4-Week Trend)
@@ -1060,9 +1125,12 @@ export function WeeklyTrendsAnalytics() {
             </div>
 
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-              Volume and strength reflect the last 7 days compared against your rolling 4-week baseline. Exercise volume is calculated from weight × reps.
+              Volume and strength reflect the last 7 days compared against your rolling 4-week baseline. Volume is calculated from weight × reps.
             </p>
 
+            {/* ==================================================
+                HEVY LINK
+                ================================================== */}
             <div className="pt-2">
               <a
                 href="hevy://"
