@@ -516,7 +516,7 @@ Before outputting the final JSON, internally verify:
 Only after these checks and athlete approval should the final JSON be generated.`;
 
 // ============================================================
-// PREFERRED GEMINI MODELS
+// GEMINI MODEL CONFIGURATION
 // ============================================================
 
 const PREFERRED_MODELS = [
@@ -529,6 +529,13 @@ const PREFERRED_MODELS = [
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
 ];
+
+const MODEL_CACHE_KEY = "p35_gemini_models";
+const ACTIVE_MODEL_KEY = "p35_gemini_active_model";
+const MODEL_CACHE_VERSION = "v2";
+
+// A single model should never be allowed to hang indefinitely.
+const MODEL_TIMEOUT_MS = 15000;
 
 // ============================================================
 // FORMATTED AI MESSAGE
@@ -559,7 +566,10 @@ function FormattedMessage({ text }: { text: string }) {
             {subItems.map((sub, sIdx) => {
               const isNumberedHeader = /^\*\*\d+\./.test(sub);
 
-              const isBullet = sub.startsWith("* ") || sub.startsWith("- ") || sub.startsWith("• ");
+              const isBullet =
+                sub.startsWith("* ") ||
+                sub.startsWith("- ") ||
+                sub.startsWith("• ");
 
               const cleanSub = sub.replace(/^[*•–-\s]+/, "");
 
@@ -577,15 +587,20 @@ function FormattedMessage({ text }: { text: string }) {
                   {isBullet && <span className="text-primary mt-1">•</span>}
 
                   <span className="flex-1">
-                    {cleanSub.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-                      part.startsWith("**") && part.endsWith("**") ? (
-                        <strong key={i} className="text-primary font-semibold">
-                          {part.slice(2, -2)}
-                        </strong>
-                      ) : (
-                        <span key={i}>{part}</span>
-                      ),
-                    )}
+                    {cleanSub
+                      .split(/(\*\*[^*]+\*\*)/g)
+                      .map((part, i) =>
+                        part.startsWith("**") && part.endsWith("**") ? (
+                          <strong
+                            key={i}
+                            className="text-primary font-semibold"
+                          >
+                            {part.slice(2, -2)}
+                          </strong>
+                        ) : (
+                          <span key={i}>{part}</span>
+                        ),
+                      )}
                   </span>
                 </p>
               );
@@ -613,6 +628,373 @@ function isValidIsoDate(value: string): boolean {
   }
 
   return date.toISOString().slice(0, 10) === value;
+}
+
+// ============================================================
+// MODEL CACHE HELPERS
+// ============================================================
+
+type CachedModels = {
+  version: string;
+  apiKeyHash: string;
+  models: string[];
+  timestamp: number;
+};
+
+function createKeyFingerprint(key: string): string {
+  // Lightweight deterministic fingerprint.
+  // The actual API key is never stored in the cache.
+  let hash = 0;
+
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash << 5) - hash + key.charCodeAt(i);
+    hash |= 0;
+  }
+
+  return `${key.length}_${Math.abs(hash)}`;
+}
+
+function getCachedModels(activeKey: string): string[] | null {
+  try {
+    const raw = localStorage.getItem(MODEL_CACHE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const cached = JSON.parse(raw) as CachedModels;
+
+    if (
+      cached.version !== MODEL_CACHE_VERSION ||
+      cached.apiKeyHash !== createKeyFingerprint(activeKey) ||
+      !Array.isArray(cached.models) ||
+      cached.models.length === 0
+    ) {
+      return null;
+    }
+
+    return cached.models;
+  } catch {
+    return null;
+  }
+}
+
+function cacheModels(activeKey: string, models: string[]) {
+  try {
+    const payload: CachedModels = {
+      version: MODEL_CACHE_VERSION,
+      apiKeyHash: createKeyFingerprint(activeKey),
+      models,
+      timestamp: Date.now(),
+    };
+
+    localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // Cache failure should never break the coach.
+  }
+}
+
+function getActiveModel(activeKey: string): string | null {
+  try {
+    const storedKey = localStorage.getItem(ACTIVE_MODEL_KEY);
+
+    if (!storedKey) {
+      return null;
+    }
+
+    const parsed = JSON.parse(storedKey);
+
+    if (
+      parsed?.apiKeyHash !== createKeyFingerprint(activeKey) ||
+      typeof parsed?.model !== "string" ||
+      !parsed.model
+    ) {
+      return null;
+    }
+
+    return parsed.model;
+  } catch {
+    return null;
+  }
+}
+
+function setActiveModel(activeKey: string, model: string) {
+  try {
+    localStorage.setItem(
+      ACTIVE_MODEL_KEY,
+      JSON.stringify({
+        apiKeyHash: createKeyFingerprint(activeKey),
+        model,
+      }),
+    );
+  } catch {
+    // Cache failure should never break the coach.
+  }
+}
+
+function clearActiveModel(activeKey: string) {
+  try {
+    const stored = getActiveModel(activeKey);
+
+    if (stored) {
+      localStorage.removeItem(ACTIVE_MODEL_KEY);
+    }
+  } catch {
+    // Ignore cache failures.
+  }
+}
+
+// ============================================================
+// MODEL DISCOVERY
+// ============================================================
+
+async function getAvailableModels(activeKey: string): Promise<string[]> {
+  const cached = getCachedModels(activeKey);
+
+  if (cached) {
+    console.log("Using cached Gemini model list.");
+    return cached;
+  }
+
+  console.log("Discovering Gemini models...");
+
+  const availableModels: {
+    baseModelId?: string;
+    name?: string;
+    supportedGenerationMethods?: string[];
+  }[] = [];
+
+  let pageToken = "";
+
+  do {
+    const query = new URLSearchParams({
+      key: activeKey,
+      pageSize: "1000",
+    });
+
+    if (pageToken) {
+      query.set("pageToken", pageToken);
+    }
+
+    const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?${query.toString()}`;
+
+    const listRes = await fetch(listUrl, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    const listData = await listRes.json().catch(() => ({}));
+
+    if (!listRes.ok) {
+      throw new Error(
+        listData.error?.message ||
+          `Unable to list Gemini models (HTTP ${listRes.status}).`,
+      );
+    }
+
+    if (Array.isArray(listData.models)) {
+      availableModels.push(...listData.models);
+    }
+
+    pageToken = listData.nextPageToken || "";
+  } while (pageToken);
+
+  const modelIds = availableModels
+    .filter((model) => Array.isArray(model.supportedGenerationMethods))
+    .filter((model) =>
+      model.supportedGenerationMethods!.includes("generateContent"),
+    )
+    .map((model) => {
+      if (model.baseModelId) {
+        return model.baseModelId;
+      }
+
+      if (model.name) {
+        return model.name.replace(/^models\//, "");
+      }
+
+      return "";
+    })
+    .filter(Boolean);
+
+  const uniqueModels = Array.from(new Set(modelIds));
+
+  if (uniqueModels.length > 0) {
+    cacheModels(activeKey, uniqueModels);
+  }
+
+  return uniqueModels;
+}
+
+// ============================================================
+// MODEL SORTING
+// ============================================================
+
+function rankModels(
+  availableModels: string[],
+  activeKey: string,
+): string[] {
+  const activeModel = getActiveModel(activeKey);
+
+  const preferred = PREFERRED_MODELS.filter((model) =>
+    availableModels.includes(model),
+  );
+
+  const otherModels = availableModels.filter(
+    (model) => !PREFERRED_MODELS.includes(model),
+  );
+
+  const ordered = [
+    ...(activeModel && availableModels.includes(activeModel)
+      ? [activeModel]
+      : []),
+    ...preferred,
+    ...otherModels,
+  ];
+
+  return Array.from(new Set(ordered));
+}
+
+// ============================================================
+// ERROR CLASSIFICATION
+// ============================================================
+
+function shouldFallback(status: number): boolean {
+  // Rate limit
+  if (status === 429) {
+    return true;
+  }
+
+  // Model unavailable / not found
+  if (status === 404) {
+    return true;
+  }
+
+  // Timeout / gateway / server problems
+  if (status === 408 || status === 409) {
+    return true;
+  }
+
+  if (status >= 500) {
+    return true;
+  }
+
+  return false;
+}
+
+// ============================================================
+// GEMINI REQUEST
+// ============================================================
+
+type GeminiAttemptResult = {
+  success: boolean;
+  reply?: string;
+  status?: number;
+  error?: string;
+  shouldFallback: boolean;
+};
+
+async function requestGeminiModel({
+  model,
+  apiKey,
+  contents,
+}: {
+  model: string;
+  apiKey: string;
+  contents: {
+    role: "user" | "model";
+    parts: { text: string }[];
+  }[];
+}): Promise<GeminiAttemptResult> {
+  const controller = new AbortController();
+
+  const timeoutId = window.setTimeout(() => {
+    controller.abort();
+  }, MODEL_TIMEOUT_MS);
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+      model,
+    )}:generateContent`;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [
+            {
+              text: SYSTEM_PROMPT,
+            },
+          ],
+        },
+
+        contents,
+
+        generationConfig: {
+          temperature: 0.7,
+        },
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      const candidateText =
+        data.candidates?.[0]?.content?.parts
+          ?.map((part: any) => part.text || "")
+          .join("")
+          .trim() || "";
+
+      if (candidateText) {
+        return {
+          success: true,
+          reply: candidateText,
+          status: res.status,
+          shouldFallback: false,
+        };
+      }
+
+      return {
+        success: false,
+        status: res.status,
+        error: `Model ${model} returned an empty response.`,
+        shouldFallback: true,
+      };
+    }
+
+    const errorMessage =
+      data.error?.message || `HTTP ${res.status} from ${model}`;
+
+    return {
+      success: false,
+      status: res.status,
+      error: errorMessage,
+      shouldFallback: shouldFallback(res.status),
+    };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return {
+        success: false,
+        error: `Model ${model} timed out after ${MODEL_TIMEOUT_MS / 1000}s.`,
+        shouldFallback: true,
+      };
+    }
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : `Unknown error from ${model}`,
+      shouldFallback: true,
+    };
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 // ============================================================
@@ -645,76 +1027,119 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+
     if (!file) return;
 
     const reader = new FileReader();
+
     reader.onload = (event) => {
       try {
         let content = event.target?.result as string;
-        
-        // Clean up markdown formatting if the AI saved it with backticks
+
         content = content.trim();
+
         if (content.startsWith("```json")) {
-          content = content.replace(/^```json\n?/, "").replace(/\n?```$/, "");
+          content = content
+            .replace(/^```json\n?/, "")
+            .replace(/\n?```$/, "");
         } else if (content.startsWith("```")) {
-          content = content.replace(/^```\n?/, "").replace(/\n?```$/, "");
+          content = content
+            .replace(/^```\n?/, "")
+            .replace(/\n?```$/, "");
         }
 
         const parsedData = JSON.parse(content);
-        
+
         let profile;
         let isFullBackup = false;
 
-        // Check if this is a full app backup rather than a raw AI response
         if (parsedData.ascension_user_profile) {
-          profile = typeof parsedData.ascension_user_profile === "string" 
-            ? JSON.parse(parsedData.ascension_user_profile) 
-            : parsedData.ascension_user_profile;
+          profile =
+            typeof parsedData.ascension_user_profile === "string"
+              ? JSON.parse(parsedData.ascension_user_profile)
+              : parsedData.ascension_user_profile;
+
           isFullBackup = true;
         } else {
           profile = parsedData;
         }
 
-        // Basic validation to ensure it's a Project Ascension protocol
         if (!profile.projectName || !profile.phases) {
-          throw new Error("Missing required keys: projectName or phases.");
+          throw new Error(
+            "Missing required keys: projectName or phases.",
+          );
         }
 
-        // Preserve API keys
-        const currentApiKey = localStorage.getItem("p35_gemini_api_key");
-        const currentHevyKey = localStorage.getItem("p35_hevy_api_key");
+        const currentApiKey = localStorage.getItem(
+          "p35_gemini_api_key",
+        );
+
+        const currentHevyKey = localStorage.getItem(
+          "p35_hevy_api_key",
+        );
 
         localStorage.clear();
 
-        if (currentApiKey) localStorage.setItem("p35_gemini_api_key", currentApiKey);
-        if (currentHevyKey) localStorage.setItem("p35_hevy_api_key", currentHevyKey);
-
-        // Restore data
-        if (isFullBackup) {
-          // Restore all historical app state (workouts, messages, etc.)
-          Object.keys(parsedData).forEach(key => {
-            const value = parsedData[key];
-            localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
-          });
-        } else {
-          // It's a fresh AI protocol, just save the profile
-          localStorage.setItem("ascension_user_profile", JSON.stringify(profile));
-          localStorage.setItem("p35_setup_complete", "true");
+        if (currentApiKey) {
+          localStorage.setItem(
+            "p35_gemini_api_key",
+            currentApiKey,
+          );
         }
 
-        toast.success(isFullBackup ? "System Backup Restored." : "Protocol Imported Successfully.");
+        if (currentHevyKey) {
+          localStorage.setItem(
+            "p35_hevy_api_key",
+            currentHevyKey,
+          );
+        }
+
+        if (isFullBackup) {
+          Object.keys(parsedData).forEach((key) => {
+            const value = parsedData[key];
+
+            localStorage.setItem(
+              key,
+              typeof value === "string"
+                ? value
+                : JSON.stringify(value),
+            );
+          });
+        } else {
+          localStorage.setItem(
+            "ascension_user_profile",
+            JSON.stringify(profile),
+          );
+
+          localStorage.setItem(
+            "p35_setup_complete",
+            "true",
+          );
+        }
+
+        toast.success(
+          isFullBackup
+            ? "System Backup Restored."
+            : "Protocol Imported Successfully.",
+        );
+
         onComplete();
       } catch (err) {
         console.error("Import error:", err);
-        const errMsg = err instanceof Error ? err.message : "Ensure it is a valid protocol.";
+
+        const errMsg =
+          err instanceof Error
+            ? err.message
+            : "Ensure it is a valid protocol.";
+
         toast.error(`Failed to parse JSON file. ${errMsg}`);
       }
-      
-      // Reset the input so the same file can be selected again if needed
+
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     };
+
     reader.readAsText(file);
   };
 
@@ -724,7 +1149,8 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTop =
+        scrollRef.current.scrollHeight;
     }
   }, [messages, isTyping]);
 
@@ -732,14 +1158,19 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   // TEXTAREA RESIZE
   // ============================================================
 
-  const handleInputResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleInputResize = (
+    e: React.ChangeEvent<HTMLTextAreaElement>,
+  ) => {
     setInput(e.target.value);
 
     const target = e.target;
 
     target.style.height = "auto";
 
-    target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
+    target.style.height = `${Math.min(
+      target.scrollHeight,
+      120,
+    )}px`;
   };
 
   // ============================================================
@@ -755,93 +1186,23 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
       return;
     }
 
-    localStorage.setItem("p35_gemini_api_key", cleanApiKey);
+    localStorage.setItem(
+      "p35_gemini_api_key",
+      cleanApiKey,
+    );
 
     if (cleanHevyKey) {
-      localStorage.setItem("p35_hevy_api_key", cleanHevyKey);
+      localStorage.setItem(
+        "p35_hevy_api_key",
+        cleanHevyKey,
+      );
     }
 
     setStep("chat");
 
-    sendMessage("Hello Coach. Let's map out my 12-month protocol.");
-  };
-
-  // ============================================================
-  // DISCOVER AVAILABLE GEMINI MODELS
-  // ============================================================
-
-  const getAvailableModels = async (activeKey: string): Promise<string[]> => {
-    const availableModels: {
-      baseModelId?: string;
-      name?: string;
-      supportedGenerationMethods?: string[];
-    }[] = [];
-
-    let pageToken = "";
-
-    do {
-      const query = new URLSearchParams({
-        key: activeKey,
-        pageSize: "1000",
-      });
-
-      if (pageToken) {
-        query.set("pageToken", pageToken);
-      }
-
-      const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?${query.toString()}`;
-
-      const listRes = await fetch(listUrl, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      const listData = await listRes.json().catch(() => ({}));
-
-      if (!listRes.ok) {
-        throw new Error(
-          listData.error?.message || `Unable to list Gemini models (HTTP ${listRes.status}).`,
-        );
-      }
-
-      if (Array.isArray(listData.models)) {
-        availableModels.push(...listData.models);
-      }
-
-      pageToken = listData.nextPageToken || "";
-    } while (pageToken);
-
-    const modelIds = availableModels
-      .filter((model) => Array.isArray(model.supportedGenerationMethods))
-      .filter((model) => model.supportedGenerationMethods!.includes("generateContent"))
-      .map((model) => {
-        if (model.baseModelId) {
-          return model.baseModelId;
-        }
-
-        if (model.name) {
-          return model.name.replace(/^models\//, "");
-        }
-
-        return "";
-      })
-      .filter(Boolean);
-
-    return Array.from(new Set(modelIds));
-  };
-
-  // ============================================================
-  // SORT MODELS
-  // ============================================================
-
-  const rankModels = (availableModels: string[]): string[] => {
-    const preferred = PREFERRED_MODELS.filter((model) => availableModels.includes(model));
-
-    const otherModels = availableModels.filter((model) => !PREFERRED_MODELS.includes(model));
-
-    return [...preferred, ...otherModels];
+    sendMessage(
+      "Hello Coach. Let's map out my 12-month protocol.",
+    );
   };
 
   // ============================================================
@@ -849,11 +1210,14 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   // ============================================================
 
   const sendMessage = async (text: string) => {
-    if (!text.trim() || isTyping) {
+    const trimmedText = text.trim();
+
+    if (!trimmedText || isTyping) {
       return;
     }
 
-    const rawKey = localStorage.getItem("p35_gemini_api_key") || "";
+    const rawKey =
+      localStorage.getItem("p35_gemini_api_key") || "";
 
     const activeKey = rawKey.replace(/\s+/g, "");
 
@@ -867,7 +1231,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
       ...messages,
       {
         role: "user" as const,
-        text,
+        text: trimmedText,
       },
     ];
 
@@ -882,7 +1246,6 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
     let reply = "";
     let success = false;
-
     let lastErrorMsg = "Gemini request failed.";
 
     try {
@@ -900,101 +1263,108 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
       }));
 
       // ========================================================
-      // DISCOVER MODELS
+      // GET MODELS
+      //
+      // First try the cached list.
+      // Only hit Google's model discovery endpoint if needed.
       // ========================================================
 
-      console.log("Discovering Gemini models available to API key...");
+      let availableModels = getCachedModels(activeKey);
 
-      const availableModels = await getAvailableModels(activeKey);
+      if (!availableModels) {
+        availableModels = await getAvailableModels(activeKey);
+      }
 
-      console.log("Gemini models supporting generateContent:", availableModels);
-
-      if (availableModels.length === 0) {
+      if (!availableModels.length) {
         throw new Error(
           "This Gemini API key has no available models that support generateContent.",
         );
       }
 
-      const rankedModels = rankModels(availableModels);
+      // ========================================================
+      // RANK MODELS
+      //
+      // Last successful model goes first.
+      // ========================================================
 
-      console.log("Gemini fallback order:", rankedModels);
+      const rankedModels = rankModels(
+        availableModels,
+        activeKey,
+      );
+
+      console.log(
+        "Gemini model order:",
+        rankedModels,
+      );
 
       // ========================================================
-      // TRY EACH AVAILABLE MODEL
+      // TRY MODELS
       // ========================================================
 
       for (const model of rankedModels) {
-        try {
-          console.log(`Trying Gemini model: ${model}`);
+        console.log(`Trying Gemini model: ${model}`);
 
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+        const result = await requestGeminiModel({
+          model,
+          apiKey: activeKey,
+          contents,
+        });
 
-          const res = await fetch(url, {
-            method: "POST",
+        if (result.success && result.reply) {
+          reply = result.reply;
+          success = true;
 
-            headers: {
-              "Content-Type": "application/json",
-              "x-goog-api-key": activeKey,
-            },
+          // Remember the model that actually worked.
+          setActiveModel(activeKey, model);
 
-            body: JSON.stringify({
-              systemInstruction: {
-                parts: [
-                  {
-                    text: SYSTEM_PROMPT,
-                  },
-                ],
-              },
+          console.log(
+            `Gemini success using ${model}`,
+          );
 
-              contents,
+          break;
+        }
 
-              generationConfig: {
-                temperature: 0.7,
-              },
-            }),
-          });
+        lastErrorMsg =
+          result.error ||
+          `Gemini model ${model} failed.`;
 
-          const data = await res.json().catch(() => ({}));
+        console.warn(
+          `Gemini model ${model} failed:`,
+          lastErrorMsg,
+        );
 
-          // ====================================================
-          // SUCCESS
-          // ====================================================
+        // ======================================================
+        // AUTHENTICATION / PERMISSION ERRORS
+        //
+        // Don't waste time hammering every model if the key
+        // itself is invalid.
+        // ======================================================
 
-          if (res.ok) {
-            const candidateText =
-              data.candidates?.[0]?.content?.parts
-                ?.map((part: any) => part.text || "")
-                .join("")
-                .trim() || "";
+        if (
+          result.status === 400 ||
+          result.status === 401 ||
+          result.status === 403
+        ) {
+          throw new Error(lastErrorMsg);
+        }
 
-            if (candidateText) {
-              reply = candidateText;
-              success = true;
+        // ======================================================
+        // FALLBACK
+        //
+        // 429 / 404 / 408 / 409 / 5xx / network / timeout
+        // immediately move to the next model.
+        // ======================================================
 
-              console.log(`Gemini success using ${model}`);
+        if (!result.shouldFallback) {
+          throw new Error(lastErrorMsg);
+        }
 
-              break;
-            }
-
-            lastErrorMsg = `Model ${model} returned an empty response.`;
-
-            console.warn(lastErrorMsg);
-
-            continue;
-          }
-
-          // ====================================================
-          // MODEL FAILED
-          // ====================================================
-
-          lastErrorMsg = data.error?.message || `HTTP ${res.status} from${model}`;
-
-          console.warn(`Gemini model ${model} failed:`, lastErrorMsg);
-        } catch (modelErr) {
-          lastErrorMsg =
-            modelErr instanceof Error ? modelErr.message : `Unknown error from ${model}`;
-
-          console.warn(`Gemini model ${model} threw an error:`, lastErrorMsg);
+        // If the active model failed, clear it before trying
+        // another one so it isn't repeatedly prioritised.
+        if (
+          getActiveModel(activeKey) === model
+        ) {
+          clearActiveModel(activeKey);
         }
       }
 
@@ -1003,7 +1373,9 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
       // ========================================================
 
       if (!success) {
-        throw new Error(`All available Gemini models failed. Last error: ${lastErrorMsg}`);
+        throw new Error(
+          `All available Gemini models failed. Last error: ${lastErrorMsg}`,
+        );
       }
 
       // ========================================================
@@ -1012,9 +1384,13 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
       const codeMarker = "`" + "`" + "`";
 
-      if (reply.includes(`${codeMarker}json`) && reply.includes(codeMarker)) {
+      if (
+        reply.includes(`${codeMarker}json`) &&
+        reply.includes(codeMarker)
+      ) {
         const jsonString = (
-          (reply.split(`${codeMarker}json`)[1] ?? "").split(codeMarker)[0] ?? ""
+          (reply.split(`${codeMarker}json`)[1] ?? "")
+            .split(codeMarker)[0] ?? ""
         ).trim();
 
         try {
@@ -1024,83 +1400,138 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           // VALIDATE ATHLETE PROFILE
           // ==================================================
 
-          const athleteProfile = profile?.athleteProfile;
+          const athleteProfile =
+            profile?.athleteProfile;
 
-          if (!athleteProfile || typeof athleteProfile !== "object") {
-            throw new Error("The coach returned a protocol without the athlete baseline.");
+          if (
+            !athleteProfile ||
+            typeof athleteProfile !== "object"
+          ) {
+            throw new Error(
+              "The coach returned a protocol without the athlete baseline.",
+            );
           }
 
           if (
             athleteProfile.age !== null &&
-            (typeof athleteProfile.age !== "number" || athleteProfile.age <= 0)
+            (typeof athleteProfile.age !== "number" ||
+              athleteProfile.age <= 0)
           ) {
-            throw new Error("The athlete age in the final protocol is invalid.");
+            throw new Error(
+              "The athlete age in the final protocol is invalid.",
+            );
           }
 
-          if (typeof athleteProfile.sex !== "string") {
-            throw new Error("The athlete sex field is invalid.");
+          if (
+            typeof athleteProfile.sex !== "string"
+          ) {
+            throw new Error(
+              "The athlete sex field is invalid.",
+            );
           }
 
           if (
             athleteProfile.heightCm !== null &&
-            (typeof athleteProfile.heightCm !== "number" || athleteProfile.heightCm <= 0)
+            (typeof athleteProfile.heightCm !== "number" ||
+              athleteProfile.heightCm <= 0)
           ) {
-            throw new Error("The athlete height in the final protocol is invalid.");
-          }
-
-          if (typeof athleteProfile.activityLevel !== "string") {
-            throw new Error("The athlete activity level is missing.");
+            throw new Error(
+              "The athlete height in the final protocol is invalid.",
+            );
           }
 
           if (
-            athleteProfile.averageDailySteps !== null &&
-            (typeof athleteProfile.averageDailySteps !== "number" ||
+            typeof athleteProfile.activityLevel !==
+            "string"
+          ) {
+            throw new Error(
+              "The athlete activity level is missing.",
+            );
+          }
+
+          if (
+            athleteProfile.averageDailySteps !==
+              null &&
+            (typeof athleteProfile.averageDailySteps !==
+              "number" ||
               athleteProfile.averageDailySteps < 0)
           ) {
-            throw new Error("The athlete step baseline is invalid.");
-          }
-
-          if (typeof athleteProfile.trainingSummary !== "string") {
-            throw new Error("The athlete training baseline is missing.");
+            throw new Error(
+              "The athlete step baseline is invalid.",
+            );
           }
 
           if (
-            athleteProfile.strengthDaysPerWeek !== null &&
-            (typeof athleteProfile.strengthDaysPerWeek !== "number" ||
+            typeof athleteProfile.trainingSummary !==
+            "string"
+          ) {
+            throw new Error(
+              "The athlete training baseline is missing.",
+            );
+          }
+
+          if (
+            athleteProfile.strengthDaysPerWeek !==
+              null &&
+            (typeof athleteProfile.strengthDaysPerWeek !==
+              "number" ||
               athleteProfile.strengthDaysPerWeek < 0)
           ) {
-            throw new Error("The athlete strength-training frequency is invalid.");
+            throw new Error(
+              "The athlete strength-training frequency is invalid.",
+            );
           }
 
           if (
-            athleteProfile.cardioDaysPerWeek !== null &&
-            (typeof athleteProfile.cardioDaysPerWeek !== "number" ||
+            athleteProfile.cardioDaysPerWeek !==
+              null &&
+            (typeof athleteProfile.cardioDaysPerWeek !==
+              "number" ||
               athleteProfile.cardioDaysPerWeek < 0)
           ) {
-            throw new Error("The athlete cardio frequency is invalid.");
+            throw new Error(
+              "The athlete cardio frequency is invalid.",
+            );
           }
 
           if (
-            athleteProfile.currentCalories !== null &&
-            (typeof athleteProfile.currentCalories !== "number" ||
+            athleteProfile.currentCalories !==
+              null &&
+            (typeof athleteProfile.currentCalories !==
+              "number" ||
               athleteProfile.currentCalories <= 0)
           ) {
-            throw new Error("The athlete current calorie intake is invalid.");
-          }
-
-          if (typeof athleteProfile.recentWeightTrend !== "string") {
-            throw new Error("The athlete weight trend field is missing.");
-          }
-
-          if (typeof athleteProfile.dietaryPreferences !== "string") {
-            throw new Error("The athlete dietary preferences field is missing.");
+            throw new Error(
+              "The athlete current calorie intake is invalid.",
+            );
           }
 
           if (
-            typeof athleteProfile.primaryObjective !== "string" ||
+            typeof athleteProfile.recentWeightTrend !==
+            "string"
+          ) {
+            throw new Error(
+              "The athlete weight trend field is missing.",
+            );
+          }
+
+          if (
+            typeof athleteProfile.dietaryPreferences !==
+            "string"
+          ) {
+            throw new Error(
+              "The athlete dietary preferences field is missing.",
+            );
+          }
+
+          if (
+            typeof athleteProfile.primaryObjective !==
+              "string" ||
             !athleteProfile.primaryObjective.trim()
           ) {
-            throw new Error("The athlete primary objective is missing.");
+            throw new Error(
+              "The athlete primary objective is missing.",
+            );
           }
 
           // ==================================================
@@ -1111,13 +1542,17 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
           if (
             !targets ||
-            typeof targets.caloriesMin !== "number" ||
-            typeof targets.caloriesMax !== "number" ||
+            typeof targets.caloriesMin !==
+              "number" ||
+            typeof targets.caloriesMax !==
+              "number" ||
             typeof targets.protein !== "number" ||
             typeof targets.steps !== "number" ||
             typeof targets.routine !== "string"
           ) {
-            throw new Error("The coach returned an incomplete Daily Non-Negotiables section.");
+            throw new Error(
+              "The coach returned an incomplete Daily Non-Negotiables section.",
+            );
           }
 
           if (
@@ -1132,82 +1567,144 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             );
           }
 
-          if (targets.caloriesMax < targets.caloriesMin) {
-            throw new Error("The coach returned an invalid calorie range.");
+          if (
+            targets.caloriesMax <
+            targets.caloriesMin
+          ) {
+            throw new Error(
+              "The coach returned an invalid calorie range.",
+            );
           }
 
           // ==================================================
           // VALIDATE PROJECT DATES
           // ==================================================
 
-          if (!profile.targetDate || typeof profile.targetDate !== "string") {
-            throw new Error("The coach must provide a valid target date.");
+          if (
+            !profile.targetDate ||
+            typeof profile.targetDate !== "string"
+          ) {
+            throw new Error(
+              "The coach must provide a valid target date.",
+            );
           }
 
-          const targetDateOnly = profile.targetDate.slice(0, 10);
+          const targetDateOnly =
+            profile.targetDate.slice(0, 10);
 
-          if (!isValidIsoDate(targetDateOnly)) {
-            throw new Error("The coach returned an invalid target date.");
+          if (
+            !isValidIsoDate(targetDateOnly)
+          ) {
+            throw new Error(
+              "The coach returned an invalid target date.",
+            );
           }
 
           // ==================================================
           // VALIDATE ROADMAP
           // ==================================================
 
-          if (!Array.isArray(profile.phases) || profile.phases.length !== 4) {
-            throw new Error("The coach must generate exactly 4 roadmap phases.");
+          if (
+            !Array.isArray(profile.phases) ||
+            profile.phases.length !== 4
+          ) {
+            throw new Error(
+              "The coach must generate exactly 4 roadmap phases.",
+            );
           }
 
-          const phaseIds = profile.phases.map((phase: any) => phase.id);
+          const phaseIds =
+            profile.phases.map(
+              (phase: any) => phase.id,
+            );
 
-          if (JSON.stringify(phaseIds) !== JSON.stringify([1, 2, 3, 4])) {
-            throw new Error("Roadmap phases must be numbered 1 through 4.");
+          if (
+            JSON.stringify(phaseIds) !==
+            JSON.stringify([1, 2, 3, 4])
+          ) {
+            throw new Error(
+              "Roadmap phases must be numbered 1 through 4.",
+            );
           }
 
-          const invalidPhase = profile.phases.some((phase: any) => {
-            if (!Array.isArray(phase.blocks) || phase.blocks.length !== 2) {
-              return true;
-            }
+          const invalidPhase =
+            profile.phases.some(
+              (phase: any) => {
+                if (
+                  !Array.isArray(phase.blocks) ||
+                  phase.blocks.length !== 2
+                ) {
+                  return true;
+                }
 
-            if (
-              typeof phase.title !== "string" ||
-              !phase.title.trim() ||
-              typeof phase.window !== "string" ||
-              !phase.window.trim() ||
-              typeof phase.summary !== "string" ||
-              !phase.summary.trim() ||
-              !Array.isArray(phase.badges)
-            ) {
-              return true;
-            }
+                if (
+                  typeof phase.title !==
+                    "string" ||
+                  !phase.title.trim() ||
+                  typeof phase.window !==
+                    "string" ||
+                  !phase.window.trim() ||
+                  typeof phase.summary !==
+                    "string" ||
+                  !phase.summary.trim() ||
+                  !Array.isArray(phase.badges)
+                ) {
+                  return true;
+                }
 
-            return phase.blocks.some((block: any) => {
-              if (
-                typeof block.name !== "string" ||
-                !block.name.trim() ||
-                typeof block.window !== "string" ||
-                !block.window.trim() ||
-                typeof block.start !== "string" ||
-                typeof block.end !== "string" ||
-                !Array.isArray(block.focus) ||
-                !Array.isArray(block.bullets) ||
-                block.focus.length === 0 ||
-                block.bullets.length === 0
-              ) {
-                return true;
-              }
+                return phase.blocks.some(
+                  (block: any) => {
+                    if (
+                      typeof block.name !==
+                        "string" ||
+                      !block.name.trim() ||
+                      typeof block.window !==
+                        "string" ||
+                      !block.window.trim() ||
+                      typeof block.start !==
+                        "string" ||
+                      typeof block.end !==
+                        "string" ||
+                      !Array.isArray(
+                        block.focus,
+                      ) ||
+                      !Array.isArray(
+                        block.bullets,
+                      ) ||
+                      block.focus.length ===
+                        0 ||
+                      block.bullets.length ===
+                        0
+                    ) {
+                      return true;
+                    }
 
-              if (!isValidIsoDate(block.start) || !isValidIsoDate(block.end)) {
-                return true;
-              }
+                    if (
+                      !isValidIsoDate(
+                        block.start,
+                      ) ||
+                      !isValidIsoDate(
+                        block.end,
+                      )
+                    ) {
+                      return true;
+                    }
 
-              const start = new Date(`${block.start}T00:00:00Z`);
+                    const start =
+                      new Date(
+                        `${block.start}T00:00:00Z`,
+                      );
 
-              const end = new Date(`${block.end}T23:59:59Z`);
+                    const end =
+                      new Date(
+                        `${block.end}T23:59:59Z`,
+                      );
 
-              return end < start;
-            });
-          });
+                    return end < start;
+                  },
+                );
+              },
+            );
 
           if (invalidPhase) {
             throw new Error(
@@ -1219,19 +1716,41 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           // VALIDATE BLOCK CONTINUITY
           // ==================================================
 
-          const allBlocks = profile.phases.flatMap((phase: any) => phase.blocks);
+          const allBlocks =
+            profile.phases.flatMap(
+              (phase: any) =>
+                phase.blocks,
+            );
 
-          for (let i = 1; i < allBlocks.length; i++) {
-            const previousEnd = new Date(`${allBlocks[i - 1].end}T00:00:00Z`);
+          for (
+            let i = 1;
+            i < allBlocks.length;
+            i++
+          ) {
+            const previousEnd =
+              new Date(
+                `${allBlocks[i - 1].end}T00:00:00Z`,
+              );
 
-            const currentStart = new Date(`${allBlocks[i].start}T00:00:00Z`);
+            const currentStart =
+              new Date(
+                `${allBlocks[i].start}T00:00:00Z`,
+              );
 
-            const expectedStart = new Date(previousEnd);
+            const expectedStart =
+              new Date(previousEnd);
 
-            expectedStart.setUTCDate(expectedStart.getUTCDate() + 1);
+            expectedStart.setUTCDate(
+              expectedStart.getUTCDate() + 1,
+            );
 
-            if (currentStart.getTime() !== expectedStart.getTime()) {
-              throw new Error("The roadmap blocks must run continuously without gaps or overlaps.");
+            if (
+              currentStart.getTime() !==
+              expectedStart.getTime()
+            ) {
+              throw new Error(
+                "The roadmap blocks must run continuously without gaps or overlaps.",
+              );
             }
           }
 
@@ -1239,12 +1758,27 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           // VALIDATE PHASE STATUS
           // ==================================================
 
-          if (profile.phases[0].status !== "active") {
-            throw new Error("Phase 1 must be marked active.");
+          if (
+            profile.phases[0].status !==
+            "active"
+          ) {
+            throw new Error(
+              "Phase 1 must be marked active.",
+            );
           }
 
-          if (profile.phases.slice(1).some((phase: any) => phase.status !== "upcoming")) {
-            throw new Error("Future phases must be marked upcoming.");
+          if (
+            profile.phases
+              .slice(1)
+              .some(
+                (phase: any) =>
+                  phase.status !==
+                  "upcoming",
+              )
+          ) {
+            throw new Error(
+              "Future phases must be marked upcoming.",
+            );
           }
 
           // ==================================================
@@ -1252,16 +1786,24 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           // ==================================================
 
           if (allBlocks.length !== 8) {
-            throw new Error("The roadmap must contain exactly 8 blocks.");
+            throw new Error(
+              "The roadmap must contain exactly 8 blocks.",
+            );
           }
 
           // ==================================================
           // PRESERVE API KEYS
           // ==================================================
 
-          const currentApiKey = localStorage.getItem("p35_gemini_api_key");
+          const currentApiKey =
+            localStorage.getItem(
+              "p35_gemini_api_key",
+            );
 
-          const currentHevyKey = localStorage.getItem("p35_hevy_api_key");
+          const currentHevyKey =
+            localStorage.getItem(
+              "p35_hevy_api_key",
+            );
 
           // ==================================================
           // CLEAR OLD SETUP DATA
@@ -1274,31 +1816,51 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           // ==================================================
 
           if (currentApiKey) {
-            localStorage.setItem("p35_gemini_api_key", currentApiKey);
+            localStorage.setItem(
+              "p35_gemini_api_key",
+              currentApiKey,
+            );
           }
 
           if (currentHevyKey) {
-            localStorage.setItem("p35_hevy_api_key", currentHevyKey);
+            localStorage.setItem(
+              "p35_hevy_api_key",
+              currentHevyKey,
+            );
           }
 
           // ==================================================
           // SAVE PROFILE
           // ==================================================
 
-          localStorage.setItem("ascension_user_profile", JSON.stringify(profile));
+          localStorage.setItem(
+            "ascension_user_profile",
+            JSON.stringify(profile),
+          );
 
-          localStorage.setItem("p35_setup_complete", "true");
+          localStorage.setItem(
+            "p35_setup_complete",
+            "true",
+          );
 
-          toast.success("Protocol Locked. Initiating Command Centre.");
+          toast.success(
+            "Protocol Locked. Initiating Command Centre.",
+          );
 
           onComplete();
 
           return;
         } catch (e) {
-          console.error("Failed to parse AI JSON", e, reply);
+          console.error(
+            "Failed to parse AI JSON",
+            e,
+            reply,
+          );
 
           toast.error(
-            e instanceof Error ? e.message : "AI generated invalid data. Tell it to try again.",
+            e instanceof Error
+              ? e.message
+              : "AI generated invalid data. Tell it to try again.",
           );
         }
       }
@@ -1315,14 +1877,15 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
         },
       ]);
     } catch (err) {
-      // ========================================================
-      // REQUEST FAILURE
-      // ========================================================
-
-      console.error("Gemini request failed:", err);
+      console.error(
+        "Gemini request failed:",
+        err,
+      );
 
       toast.error(
-        err instanceof Error ? err.message : "Failed to connect to Coach. Check your API key.",
+        err instanceof Error
+          ? err.message
+          : "Failed to connect to Coach. Check your API key.",
       );
     } finally {
       setIsTyping(false);
@@ -1342,7 +1905,9 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
               <Key className="size-6" />
             </div>
 
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Ignition Sequence</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              Ignition Sequence
+            </h1>
 
             <p className="text-sm text-muted-foreground">
               Provide your API keys to bring the AI Coach online.
@@ -1354,7 +1919,9 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-primary">Gemini API Key</label>
+                <label className="text-xs font-semibold text-primary">
+                  Gemini API Key
+                </label>
 
                 <a
                   href="https://aistudio.google.com/"
@@ -1369,7 +1936,9 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
               <input
                 type="password"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) =>
+                  setApiKey(e.target.value)
+                }
                 placeholder="AIzaSy..."
                 className="w-full rounded-md border border-border bg-surface-2/50 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
               />
@@ -1396,24 +1965,33 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
               <input
                 type="password"
                 value={hevyKey}
-                onChange={(e) => setHevyKey(e.target.value)}
+                onChange={(e) =>
+                  setHevyKey(e.target.value)
+                }
                 className="w-full rounded-md border border-border bg-surface-2/50 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
               />
             </div>
 
             {/* START BUTTON */}
 
-            <Button className="w-full h-12 mt-6 font-bold" onClick={handleStartChat}>
+            <Button
+              className="w-full h-12 mt-6 font-bold"
+              onClick={handleStartChat}
+            >
               Boot AI Coach
             </Button>
 
             {/* IMPORT SECTION */}
+
             <div className="relative mt-6">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t border-border/40" />
               </div>
+
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Or</span>
+                <span className="bg-background px-2 text-muted-foreground">
+                  Or
+                </span>
               </div>
             </div>
 
@@ -1424,11 +2002,13 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
               className="hidden"
               onChange={handleFileUpload}
             />
-            
+
             <Button
               variant="outline"
               className="w-full h-12 mt-4 font-bold border-border/40 hover:bg-surface-2/50 text-foreground"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() =>
+                fileInputRef.current?.click()
+              }
             >
               <Upload className="mr-2 size-4" />
               Import Existing Protocol
@@ -1451,7 +2031,9 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
         <Dumbbell className="size-5 text-primary" />
 
         <div>
-          <h2 className="text-sm font-bold">Coach Setup Protocol</h2>
+          <h2 className="text-sm font-bold">
+            Coach Setup Protocol
+          </h2>
 
           <p className="text-xs text-muted-foreground">
             Collaborate with your coach to build your roadmap.
@@ -1461,11 +2043,23 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
       {/* CHAT */}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-4 py-4 pr-2">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto space-y-4 py-4 pr-2"
+      >
         {messages
-          .filter((m) => !m.text.includes("Hello Coach"))
+          .filter(
+            (m) => !m.text.includes("Hello Coach"),
+          )
           .map((m, i) => (
-            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div
+              key={i}
+              className={`flex ${
+                m.role === "user"
+                  ? "justify-end"
+                  : "justify-start"
+              }`}
+            >
               <div
                 className={`max-w-[85%] rounded-xl px-4 py-3 text-sm ${
                   m.role === "user"
@@ -1473,7 +2067,13 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                     : "bg-surface-2/60 text-foreground"
                 }`}
               >
-                {m.role === "model" ? <FormattedMessage text={m.text} /> : m.text}
+                {m.role === "model" ? (
+                  <FormattedMessage
+                    text={m.text}
+                  />
+                ) : (
+                  m.text
+                )}
               </div>
             </div>
           ))}
@@ -1500,7 +2100,10 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             value={input}
             onChange={handleInputResize}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey
+              ) {
                 e.preventDefault();
 
                 sendMessage(input);
@@ -1513,8 +2116,12 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           <Button
             size="icon"
             className="size-9 shrink-0 mb-0.5 rounded-lg"
-            onClick={() => sendMessage(input)}
-            disabled={!input.trim() || isTyping}
+            onClick={() =>
+              sendMessage(input)
+            }
+            disabled={
+              !input.trim() || isTyping
+            }
           >
             <Send className="size-4" />
           </Button>
