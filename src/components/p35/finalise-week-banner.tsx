@@ -1267,13 +1267,27 @@ ${hevyText}
 Daily Journal Notes:
 ${journalText}`;
 
-      const userPrompt = `Review my completed week based on the performance data, bodyweight trend, protocol targets, journal notes, and workout logs.
+      const userPrompt = `Review my completed week and coach me into the next.
+
+CRITICAL INSTRUCTIONS:
+- Do NOT list out, recite, or inventory exercises, sets, weights, or habit percentages. I already know what I logged.
+- Deliver genuine coaching critique: where momentum was won, where discipline cracked, and what needs fixing.
+
 You MUST structure your response EXACTLY with these four markdown headers and nothing else:
+
 **The Numbers**
+Audit scale movement against calorie and step adherence. State what the data actually proves about deficit consistency and water/glycogen shifts—no raw data regurgitation.
+
 **The Standard**
+Address habit discipline and protocol execution. Call out friction, missed standards, or excuses directly.
+
 **The Iron**
+Evaluate lifting intensity and balance without listing every exercise. Acknowledge key compound efforts, then ALWAYS prescribe a clear progressive overload target or lifting drive for the coming week (e.g. hunt +1 rep on a specific lift, push weight on top sets, or address volume gaps).
+
 **Next Action**
-Do NOT output any empty bullet points. Do NOT alter the headers.`;
+A single operational directive to execute from Monday morning.
+
+Do NOT output any empty bullet points. Do NOT alter the headers. Keep total response under 350 words.`;
 
       /*
        * Build the system prompt once.
@@ -1304,7 +1318,7 @@ Do NOT output any empty bullet points. Do NOT alter the headers.`;
         ],
 
         generationConfig: {
-          temperature: 0.7,
+          temperature: 0.4,
         },
       };
 
