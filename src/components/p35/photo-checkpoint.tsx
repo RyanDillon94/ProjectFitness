@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Columns, // Added for the compare button icon
+  Columns,
   FolderArchive,
   ImagePlus,
   Loader2,
@@ -33,7 +33,7 @@ const ANGLES: Array<{ id: PhotoAngle; label: string }> = [
 export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   const [selectedAngle, setSelectedAngle] = useState<PhotoAngle>("front");
   const [modalImage, setModalImage] = useState<{ src: string; title: string } | null>(null);
-  const [showCompare, setShowCompare] = useState(false); // Added state for comparison modal
+  const [showCompare, setShowCompare] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveAngle, setArchiveAngle] = useState<PhotoAngle>("front");
   
@@ -138,18 +138,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* New Compare Button - Only shows if both baseline and current photos exist */}
-          {activeAnglePhotos.baseline && activeAnglePhotos.current && (
-            <button
-              type="button"
-              onClick={() => setShowCompare(true)}
-              className="flex items-center gap-1 rounded-md border border-border bg-surface-2/40 px-2.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:text-primary"
-            >
-              <Columns className="size-3.5" />
-              Compare
-            </button>
-          )}
-
           {(archive?.length ?? 0) > 0 && (
             <button
               type="button"
@@ -312,15 +300,30 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         })}
       </div>
 
-      <Button
-        variant={isOverdue ? "default" : "secondary"}
-        className={`w-full transition-colors ${isOverdue ? "bg-amber-500 text-black hover:bg-amber-400 font-bold shadow-[0_0_12px_rgba(245,158,11,0.3)]" : ""}`}
-        disabled={upload.isPending}
-        onClick={() => pick("current")}
-      >
-        <ImagePlus className="size-4 mr-2" /> 
-        {isOverdue ? "Upload Checkpoint Photos" : `Upload current (${selectedAngle})`}
-      </Button>
+      {/* Upload and Compare Buttons Container */}
+      <div className="space-y-2">
+        <Button
+          variant={isOverdue ? "default" : "secondary"}
+          className={`w-full transition-colors ${isOverdue ? "bg-amber-500 text-black hover:bg-amber-400 font-bold shadow-[0_0_12px_rgba(245,158,11,0.3)]" : ""}`}
+          disabled={upload.isPending}
+          onClick={() => pick("current")}
+        >
+          <ImagePlus className="size-4 mr-2" /> 
+          {isOverdue ? "Upload Checkpoint Photos" : `Upload current (${selectedAngle})`}
+        </Button>
+
+        {/* Compare Button - Now at the bottom, full width */}
+        {activeAnglePhotos.baseline && activeAnglePhotos.current && (
+          <Button
+            variant="outline"
+            className="w-full bg-surface-2/40 hover:bg-surface-2 border-border/80 text-foreground transition-colors"
+            onClick={() => setShowCompare(true)}
+          >
+            <Columns className="size-4 mr-2 text-primary" />
+            Compare Baseline vs Current
+          </Button>
+        )}
+      </div>
 
       <input
         ref={inputRef}
@@ -348,7 +351,7 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         </div>
       )}
 
-      {/* New Side-by-Side Compare Modal */}
+      {/* Side-by-Side Compare Modal */}
       {showCompare && activeAnglePhotos.baseline && activeAnglePhotos.current && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm" onClick={() => setShowCompare(false)}>
           <div className="relative max-h-[90vh] max-w-4xl w-full overflow-hidden rounded-2xl border border-border bg-surface-2 p-4 lg:p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
