@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Columns, // Added for the compare button icon
   FolderArchive,
   ImagePlus,
   Loader2,
@@ -32,6 +33,7 @@ const ANGLES: Array<{ id: PhotoAngle; label: string }> = [
 export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   const [selectedAngle, setSelectedAngle] = useState<PhotoAngle>("front");
   const [modalImage, setModalImage] = useState<{ src: string; title: string } | null>(null);
+  const [showCompare, setShowCompare] = useState(false); // Added state for comparison modal
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveAngle, setArchiveAngle] = useState<PhotoAngle>("front");
   
@@ -46,7 +48,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
   const isFinalWeek = currentWeek >= totalWeeks;
   const isPhotoWeek = currentWeek % 4 === 0;
 
-  // Split logic: One for the overdue penalty, one for the standard weekly reminder
   const isOverdue = hasDebt;
   const isPhotoWeekPending = isPhotoWeek && !isCleared;
   const showReminderBanner = isOverdue || isPhotoWeekPending;
@@ -134,10 +135,21 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
           <Camera className={`size-5 transition-colors ${isOverdue ? "text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]" : "text-primary"}`} />
           <h2 className="text-lg font-bold">Photo Checkpoint</h2>
           {upload.isPending && <Loader2 className="size-4 animate-spin text-primary" />}
-
         </div>
 
         <div className="flex items-center gap-2">
+          {/* New Compare Button - Only shows if both baseline and current photos exist */}
+          {activeAnglePhotos.baseline && activeAnglePhotos.current && (
+            <button
+              type="button"
+              onClick={() => setShowCompare(true)}
+              className="flex items-center gap-1 rounded-md border border-border bg-surface-2/40 px-2.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:text-primary"
+            >
+              <Columns className="size-3.5" />
+              Compare
+            </button>
+          )}
+
           {(archive?.length ?? 0) > 0 && (
             <button
               type="button"
@@ -168,7 +180,6 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         </div>
       </div>
 
-      {/* DYNAMIC CONTEXT BANNER - Standard Green for Photo Week, Amber for Overdue */}
       {showReminderBanner && (
         <div className={`rounded-lg border p-3 flex items-start gap-3 transition-colors ${isOverdue ? "border-amber-500/40 bg-amber-500/10" : "border-primary/40 bg-primary/10"}`}>
           <AlertCircle className={`size-5 shrink-0 mt-0.5 ${isOverdue ? "text-amber-500" : "text-primary"}`} />
@@ -322,6 +333,7 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
         }}
       />
 
+      {/* Single Image Modal */}
       {modalImage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm" onClick={() => setModalImage(null)}>
           <div className="relative max-h-[90vh] max-w-sm w-full overflow-hidden rounded-2xl border border-border bg-surface-2 p-2 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -332,6 +344,30 @@ export function PhotoCheckpoint({ userId }: { userId: string | null }) {
               </button>
             </div>
             <img src={modalImage.src} alt={modalImage.title} className="max-h-[75vh] w-full rounded-xl object-contain" />
+          </div>
+        </div>
+      )}
+
+      {/* New Side-by-Side Compare Modal */}
+      {showCompare && activeAnglePhotos.baseline && activeAnglePhotos.current && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm" onClick={() => setShowCompare(false)}>
+          <div className="relative max-h-[90vh] max-w-4xl w-full overflow-hidden rounded-2xl border border-border bg-surface-2 p-4 lg:p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-bold text-primary">{selectedAngle.toUpperCase()} Comparison</p>
+              <button type="button" onClick={() => setShowCompare(false)} className="rounded-full bg-surface-2/80 p-1 text-muted-foreground hover:text-foreground">
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <p className="text-center text-xs font-semibold text-muted-foreground">Block Baseline</p>
+                <img src={activeAnglePhotos.baseline} alt="Baseline" className="max-h-[70vh] w-full rounded-xl object-contain bg-black/40" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-center text-xs font-semibold text-muted-foreground">Current / Final</p>
+                <img src={activeAnglePhotos.current} alt="Current" className="max-h-[70vh] w-full rounded-xl object-contain bg-black/40" />
+              </div>
+            </div>
           </div>
         </div>
       )}
