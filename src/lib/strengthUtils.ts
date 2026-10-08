@@ -11,17 +11,6 @@ import {
  * ============================================================
  * TRAINING MOMENTUM — ROLLING 4 WEEKS vs PREVIOUS 4 WEEKS
  * ============================================================
- *
- * CURRENT window:  the last 28 days (including today)
- * BASELINE window: the 28 days before that
- * Total history used: 56 days
- *
- * Units:
- * - Headline + muscle group + leg subgroup volume → SET COUNT
- *   (every muscle is weighted equally, so heavy leg lifts can't
- *   swamp the total)
- * - Exercise-level volume → weight × reps (captures load/rep changes)
- * - Strength → best estimated 1RM per exercise, current vs baseline
  */
 
 export type WorkoutSet = {
@@ -33,75 +22,38 @@ export type WorkoutSet = {
 
 export type TopExercise = {
   exerciseName: string;
-
-  // Best e1RM achieved in the current 4-week window.
   currentE1RM: number;
-
-  // Best e1RM achieved in the previous 4-week window.
   baselineE1RM: number;
-
-  // Current best e1RM vs baseline best e1RM (%).
   percentChange: number;
-
-  // Current 4-week tonnage (weight × reps) vs previous 4-week tonnage (%).
   volumeChange: number;
-
-  // Actual current 4-week tonnage.
   currentVolume: number;
-
-  // Total tonnage across both windows. Used only to rank top exercises.
   trendVolume: number;
-
-  // Performed in the current window, but not in the previous one.
   isNew: boolean;
-
-  // Performed in the previous window, but not in the current one.
-  // The UI shows "—" instead of -100%.
   isDropped: boolean;
 };
 
 export type LegSubGroupSummary = {
   strengthChange: number;
-
-  // Change in SET COUNT, current 4 weeks vs previous 4 weeks (%).
   volumeChange: number;
-
-  // Working sets in the current 4 weeks.
   currentSets: number;
-
-  // Working sets in the previous 4 weeks.
   baselineSets: number;
-
   topExercises: TopExercise[];
 };
 
 export type MuscleGroupSummary = {
   strengthChange: number;
-
-  // Change in SET COUNT, current 4 weeks vs previous 4 weeks (%).
   volumeChange: number;
-
-  // Working sets in the current 4 weeks.
   currentSets: number;
-
-  // Working sets in the previous 4 weeks.
   baselineSets: number;
-
   topExercises: TopExercise[];
-
   legSubGroups: Record<LegSubGroup, LegSubGroupSummary>;
 };
 
 export type ProgressReport = {
   overallStrengthChange: number;
-
-  // Headline volume change, based on SET COUNT.
   overallVolumeChange: number;
-
-  // Total working sets in each window (for "has baseline?" checks).
   overallCurrentSets: number;
   overallBaselineSets: number;
-
   muscleGroups: Record<MuscleGroup, MuscleGroupSummary>;
   weeklyTrend: any[];
 };
@@ -110,23 +62,14 @@ type ExerciseProgress = {
   exerciseName: string;
   muscle: MuscleGroup;
   legSubGroup: LegSubGroup | null;
-
   baseE1rm: number;
   recentE1rm: number;
-
-  // Tonnage (weight × reps)
   currentVolume: number;
   baselineVolume: number;
-
-  // Working set counts
   currentSets: number;
   baselineSets: number;
 };
 
-/*
- * Exercise names that couldn't be mapped to a muscle group.
- * Warned once per name so the console isn't spammed.
- */
 const warnedUnmappedExercises = new Set<string>();
 
 export function calculateE1RM(weight: number, reps: number): number {
@@ -141,9 +84,6 @@ export function calculateE1RM(weight: number, reps: number): number {
   return Math.round(weight * (1 + reps / 30) * 10) / 10;
 }
 
-/**
- * Tonnage for a single set: weight × reps.
- */
 function calculateSetVolume(weight: number, reps: number): number {
   if (weight <= 0 || reps <= 0) {
     return 0;
@@ -152,12 +92,6 @@ function calculateSetVolume(weight: number, reps: number): number {
   return weight * reps;
 }
 
-/**
- * Percentage change between two totals.
- * Works for set counts or tonnage.
- *
- * baseline = 0 and current > 0 → 100 (UI shows NEW via flags)
- */
 function calculatePercentChange(current: number, baseline: number): number {
   if (baseline === 0 && current === 0) {
     return 0;
@@ -203,15 +137,6 @@ function createEmptyMuscleGroups(): Record<MuscleGroup, MuscleGroupSummary> {
   return result;
 }
 
-/**
- * Creates the display-ready exercise object.
- *
- * NEW:     active in the current window, nothing in the baseline.
- * DROPPED: active in the baseline, nothing in the current window.
- *
- * Underlying numbers stay available. The UI decides how to show
- * NEW / DROPPED instead of +100% / -100%.
- */
 function createTopExercise(data: ExerciseProgress): TopExercise {
   const hasCurrentActivity = data.currentVolume > 0;
   const hasBaselineActivity = data.baselineVolume > 0;
@@ -225,10 +150,8 @@ function createTopExercise(data: ExerciseProgress): TopExercise {
     strengthChange =
       ((data.recentE1rm - data.baseE1rm) / data.baseE1rm) * 100;
   } else if (data.baseE1rm === 0 && data.recentE1rm > 0) {
-    // No previous baseline. UI uses isNew to display NEW.
     strengthChange = 100;
   } else if (data.baseE1rm > 0 && data.recentE1rm === 0) {
-    // Not performed in the current window. UI uses isDropped to display "—".
     strengthChange = -100;
   }
 
@@ -252,13 +175,6 @@ function createTopExercise(data: ExerciseProgress): TopExercise {
   };
 }
 
-/**
- * Volume-weighted average strength change for a list of exercises.
- *
- * Only exercises with BOTH a baseline e1RM and a current e1RM count.
- * New and dropped exercises are excluded so they can't distort the average.
- * Weighted by current tonnage.
- */
 function weightedStrength(exercises: ExerciseProgress[]): {
   weightedChange: number;
   weight: number;
@@ -290,24 +206,22 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   const now = endOfToday.getTime();
   const MS_PER_DAY = 86_400_000;
 
-  // CURRENT: last 28 days
   const currentWindowStart = now - 28 * MS_PER_DAY;
-
-  // BASELINE: the 28 days before the current window
   const baselineWindowStart = now - 56 * MS_PER_DAY;
   const baselineWindowEnd = currentWindowStart;
 
-  const parseDate = (date: string): number => {
-    const parts = date.split("-").map(Number);
-
-    if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
-      return NaN;
+  const parseDate = (dateStr: string): number => {
+    if (dateStr.includes("-")) {
+      const parts = dateStr.split("-").map(Number);
+      if (parts.length === 3 && !parts.some((part) => Number.isNaN(part))) {
+        return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).getTime();
+      }
     }
-
-    return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).getTime();
+    
+    const parsedTime = new Date(dateStr).getTime();
+    return Number.isNaN(parsedTime) ? NaN : parsedTime;
   };
 
-  // Only valid sets inside the full 56-day window are considered.
   const validSets = sets.filter((s) => {
     if (!s || !s.exerciseName || s.weight <= 0 || s.reps <= 0) {
       return false;
@@ -329,21 +243,11 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
     };
   }
 
-  /*
-   * EXERCISE DATA
-   *
-   * Only the PRIMARY muscle from getMuscleGroupForExercise is used.
-   * Secondary muscles do NOT receive volume or strength.
-   */
   const exerciseMap = new Map<string, ExerciseProgress>();
 
   validSets.forEach((set) => {
     const muscle = getMuscleGroupForExercise(set.exerciseName);
 
-    /*
-     * Unknown exercises are ignored rather than assigned to an
-     * arbitrary muscle. Warn once per name so mapping gaps are visible.
-     */
     if (!muscle) {
       if (!warnedUnmappedExercises.has(set.exerciseName)) {
         warnedUnmappedExercises.add(set.exerciseName);
@@ -404,9 +308,6 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
 
   const exerciseProgress = Array.from(exerciseMap.values());
 
-  /*
-   * OVERALL VOLUME (HEADLINE) — SET COUNT
-   */
   const overallCurrentSets = exerciseProgress.reduce(
     (sum, e) => sum + e.currentSets,
     0
@@ -422,9 +323,6 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
     overallBaselineSets
   );
 
-  /*
-   * MUSCLE GROUP SUMMARIES
-   */
   const muscleGroupSummaries = {} as Record<MuscleGroup, MuscleGroupSummary>;
 
   let overallWeightedStrengthChange = 0;
@@ -435,7 +333,6 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
       (exercise) => exercise.muscle === group
     );
 
-    // Strength
     const strength = weightedStrength(groupExercises);
 
     const strengthChange =
@@ -443,7 +340,6 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
         ? Math.round((strength.weightedChange / strength.weight) * 10) / 10
         : 0;
 
-    // Volume (sets)
     const currentSets = groupExercises.reduce(
       (sum, e) => sum + e.currentSets,
       0
@@ -456,19 +352,12 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
 
     const volumeChange = calculatePercentChange(currentSets, baselineSets);
 
-    /*
-     * TOP 3 EXERCISES — ranked by total tonnage across both windows.
-     * No "performed twice" rule. Dropped and new exercises both qualify.
-     */
     const topExercises = groupExercises
       .map((exercise) => createTopExercise(exercise))
       .filter((exercise) => exercise.trendVolume > 0)
       .sort((a, b) => b.trendVolume - a.trendVolume)
       .slice(0, 3);
 
-    /*
-     * LEG SUBGROUPS
-     */
     const legSubGroups = createEmptyLegSubGroups();
 
     if (group === "Legs") {
@@ -526,7 +415,6 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
       legSubGroups,
     };
 
-    // Overall strength excludes Biceps and Triceps (existing behaviour).
     if (strength.weight > 0 && group !== "Biceps" && group !== "Triceps") {
       overallWeightedStrengthChange += strength.weightedChange;
       overallStrengthWeight += strength.weight;
