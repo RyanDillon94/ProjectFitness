@@ -30,8 +30,12 @@ import {
 
 export function WeeklyTrendsAnalytics() {
   const [isOpen, setIsOpen] = useState(false);
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
-  const [expandedLegSubGroup, setExpandedLegSubGroup] = useState<LegSubGroup | null>(null);
+
+  const [expandedGroup, setExpandedGroup] =
+    useState<string | null>(null);
+
+  const [expandedLegSubGroup, setExpandedLegSubGroup] =
+    useState<LegSubGroup | null>(null);
 
   /*
    * ============================================================
@@ -70,18 +74,11 @@ export function WeeklyTrendsAnalytics() {
           return;
         }
 
-        const rawDate = 
-          w.date || 
-          w.startTime || 
-          w.start_time || 
-          new Date().toISOString();
-        
-        let date = rawDate;
-        if (rawDate.includes(",")) {
-          date = rawDate.split(",")[0].trim();
-        } else {
-          date = rawDate.slice(0, 10);
-        }
+        const date =
+          w.date ||
+          w.startTime?.slice(0, 10) ||
+          w.start_time?.slice(0, 10) ||
+          new Date().toISOString().slice(0, 10);
 
         const exercises =
           w.exercises ||
@@ -418,6 +415,15 @@ export function WeeklyTrendsAnalytics() {
    * ============================================================
    * EXERCISE TREND ROW
    * ============================================================
+   *
+   * Shows:
+   * - Strength/e1RM percentage change
+   * - Volume percentage change
+   *
+   * NEW exercises:
+   * - Display NEW instead of +100%
+   *
+   * Raw e1RM and "e1RM"/"Vol" labels remain hidden.
    */
 
   const renderExerciseTrend = (
@@ -512,6 +518,10 @@ export function WeeklyTrendsAnalytics() {
 
   return (
     <div className="w-full">
+      {/* ========================================================
+          CARD / TRIGGER
+          ======================================================== */}
+
       <Dialog
         open={isOpen}
         onOpenChange={(open) => {
@@ -550,6 +560,10 @@ export function WeeklyTrendsAnalytics() {
           </div>
         </DialogTrigger>
 
+        {/* ======================================================
+            ANALYTICS DIALOG
+            ====================================================== */}
+
         <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -559,6 +573,10 @@ export function WeeklyTrendsAnalytics() {
           </DialogHeader>
 
           <div className="space-y-5 pt-2">
+            {/* ==================================================
+                ADHERENCE SUMMARY
+                ================================================== */}
+
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
                 <p className="stat-label flex items-center justify-center gap-1">
@@ -590,6 +608,10 @@ export function WeeklyTrendsAnalytics() {
                 </p>
               </div>
             </div>
+
+            {/* ==================================================
+                WEEKLY ADHERENCE
+                ================================================== */}
 
             <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -631,10 +653,18 @@ export function WeeklyTrendsAnalytics() {
               Adherence is calculated dynamically based on weekday rules and weekly execution protocol targets.
             </p>
 
+            {/* ==================================================
+                TRAINING MOMENTUM
+                ================================================== */}
+
             <div className="mt-6 pt-5 border-t border-border space-y-4">
               <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
                 Training Momentum
               </h3>
+
+              {/* ==================================================
+                  OVERALL
+                  ================================================== */}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
@@ -664,6 +694,10 @@ export function WeeklyTrendsAnalytics() {
                 </div>
               </div>
 
+              {/* ==================================================
+                  MUSCLE GROUP TABLE
+                  ================================================== */}
+
               <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
                 <div className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   <span>
@@ -690,9 +724,9 @@ export function WeeklyTrendsAnalytics() {
                       const hasActivity =
                         data &&
                         (
-                          data.currentSets >
+                          data.currentVolume >
                             0 ||
-                          data.baselineSets >
+                          data.baselineVolume >
                             0
                         );
 
@@ -759,7 +793,7 @@ export function WeeklyTrendsAnalytics() {
                               {renderChangeBadge(
                                 data.strengthChange,
                                 hasActivity &&
-                                  data.baselineSets >
+                                  data.baselineVolume >
                                     0
                               )}
                             </div>
@@ -771,6 +805,10 @@ export function WeeklyTrendsAnalytics() {
                               )}
                             </div>
                           </div>
+
+                          {/* ==================================================
+                              NON-LEG MUSCLE GROUPS
+                              ================================================== */}
 
                           {isExpanded &&
                             group !==
@@ -796,6 +834,10 @@ export function WeeklyTrendsAnalytics() {
                               </div>
                             )}
 
+                          {/* ==================================================
+                              LEGS → SUBGROUPS
+                              ================================================== */}
+
                           {isExpanded &&
                             group ===
                               "Legs" && (
@@ -814,9 +856,9 @@ export function WeeklyTrendsAnalytics() {
                                       const hasSubActivity =
                                         subData &&
                                         (
-                                          subData.currentSets >
+                                          subData.currentVolume >
                                             0 ||
-                                          subData.baselineSets >
+                                          subData.baselineVolume >
                                             0
                                         );
 
@@ -884,7 +926,7 @@ export function WeeklyTrendsAnalytics() {
                                               {renderChangeBadge(
                                                 subData.strengthChange,
                                                 hasSubActivity &&
-                                                  subData.baselineSets >
+                                                  subData.baselineVolume >
                                                     0
                                               )}
                                             </div>
@@ -896,6 +938,10 @@ export function WeeklyTrendsAnalytics() {
                                               )}
                                             </div>
                                           </div>
+
+                                          {/* ==================================================
+                                              SUBGROUP → EXERCISES
+                                              ================================================== */}
 
                                           {isSubExpanded &&
                                             hasExercises && (
@@ -934,6 +980,10 @@ export function WeeklyTrendsAnalytics() {
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
               Volume and strength reflect the last 7 days compared against your rolling 4-week baseline. Volume is calculated from weight × reps.
             </p>
+
+            {/* ==================================================
+                HEVY LINK
+                ================================================== */}
 
             <div className="pt-2">
               <a
