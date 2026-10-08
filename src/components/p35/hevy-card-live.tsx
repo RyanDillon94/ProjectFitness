@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,24 +11,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  fetchLatestHevyWorkout,
-  type HevyWorkout,
-} from "@/lib/hevy.functions";
-import { Activity, Loader2, RefreshCw, Settings, Upload } from "lucide-react";
+import { fetchLatestHevyWorkout, type HevyWorkout } from "@/lib/hevy.functions";
+import { Activity, Loader2, RefreshCw, Settings } from "lucide-react";
 import { toast } from "sonner";
-
-// ============================================================
-// TYPES
-// ============================================================
-
-type HevyHistoryWorkout = HevyWorkout & {
-  date: string;
-};
-
-// ============================================================
-// HELPERS
-// ============================================================
 
 function isCardioExercise(exerciseTitle: string, sets: any[]): boolean {
   const title = exerciseTitle.toLowerCase();
@@ -85,7 +70,8 @@ function formatWeight(weight: number | null | undefined, exerciseTitle: string) 
   if (weight == null) return "BW";
 
   const titleLower = exerciseTitle.toLowerCase();
-
+  
+  // Exclude "lat pulldown" from being caught by the "cable" keyword
   const isCableOrLbs =
     (titleLower.includes("cable") && !titleLower.includes("lat pulldown")) ||
     titleLower.includes("pushdown") ||
@@ -101,52 +87,6 @@ function formatWeight(weight: number | null | undefined, exerciseTitle: string) 
   return `${roundedKg}kg`;
 }
 
-function parseWorkoutDate(rawDate: string): Date | null {
-  if (!rawDate) return null;
-  const value = rawDate.trim();
-
-  const directDate = new Date(value);
-  if (!isNaN(directDate.getTime())) return directDate;
-
-  const cleaned = value
-    .replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*/i, "");
-
-  const hevyMatch = cleaned.match(
-    /^([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})\s+at\s+(\d{1,2}):(\d{2})\s*(am|pm)$/i
-  );
-
-  if (hevyMatch) {
-    const [, monthName, dayStr, yearStr, hourStr, minuteStr, ampm] = hevyMatch;
-    const months: Record<string, number> = {
-      jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
-      may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8,
-      september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
-    };
-    const month = months[monthName.toLowerCase()];
-
-    if (month != null) {
-      let hour = parseInt(hourStr, 10);
-      if (ampm.toLowerCase() === "pm" && hour !== 12) hour += 12;
-      if (ampm.toLowerCase() === "am" && hour === 12) hour = 0;
-
-      const date = new Date(Number(yearStr), month, Number(dayStr), hour, Number(minuteStr));
-      if (!isNaN(date.getTime())) return date;
-    }
-  }
-
-  const ukMatch = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/);
-  if (ukMatch) {
-    const [, dayStr, monthStr, yearStr, hourStr = "0", minuteStr = "0"] = ukMatch;
-    const date = new Date(Number(yearStr), Number(monthStr) - 1, Number(dayStr), Number(hourStr), Number(minuteStr));
-    if (!isNaN(date.getTime())) return date;
-  }
-
-  return null;
-}
-
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
 
 export function HevyCardLive({
   workout: initialWorkout,
@@ -169,8 +109,6 @@ export function HevyCardLive({
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (initialApiKey && !activeKey) {
@@ -221,210 +159,6 @@ export function HevyCardLive({
     } finally {
       setLoading(false);
     }
-  };
-
-  // ============================================================
-  // CSV IMPORT
-  // ============================================================
-  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-
-    reader.onload = (evt) => {
-      try {
-        const text = evt.target?.result as string;
-        if (!text) {
-          toast.error("CSV file was empty.");
-          return;
-        }
-
-        const arr: string[][] = [];
-        let quote = false;
-        let row: string[] = [];
-        let col = "";
-
-        for (let c = 0; c < text.length; c++) {
-          const cc = text[c];
-          const nc = text[c + 1];
-
-          if (cc === '"' && quote && nc === '"') {
-            col += cc;
-            c++;
-            continue;
-          }
-
-          if (cc === '"') {
-            quote = !quote;
-            continue;
-          }
-
-          if (cc === "," && !quote) {
-            row.push(col);
-            col = "";
-            continue;
-          }
-
-          if (cc === "\n" && !quote) {
-            row.push(col);
-            arr.push(row);
-            row = [];
-            col = "";
-            continue;
-          }
-
-          if (cc === "\r" && !quote) continue;
-
-          col += cc;
-        }
-
-        if (col || row.length > 0) row.push(col);
-        if (row.length > 0) arr.push(row);
-
-        if (arr.length < 2) {
-          toast.error("Invalid CSV format.");
-          return;
-        }
-
-        const headers = (arr[0] ?? []).map((h) => h.trim().toLowerCase());
-        const findHeader = (...names: string[]) => {
-          for (const name of names) {
-            const index = headers.indexOf(name);
-            if (index >= 0) return index;
-          }
-          return -1;
-        };
-
-        const iStart = findHeader("start_time", "start time", "date");
-        const iTitle = findHeader("title", "workout_title", "workout title");
-        const iExTitle = findHeader("exercise_title", "exercise title", "exercise");
-        const iWeightKg = findHeader("weight_kg", "weight kg");
-        const iWeightLbs = findHeader("weight_lbs", "weight lbs");
-        const iReps = findHeader("reps", "repetitions");
-        const iRpe = findHeader("rpe");
-        const iDistance = findHeader("distance_meters", "distance meters", "distance");
-        const iDuration = findHeader("duration_seconds", "duration seconds", "duration");
-
-        if (iStart === -1 || iExTitle === -1) {
-          toast.error("Missing required columns. Are you sure this is a Hevy export?");
-          return;
-        }
-
-        const workoutsMap: Record<string, HevyHistoryWorkout> = {};
-
-        for (let i = 1; i < arr.length; i++) {
-          const r = arr[i];
-          if (!r || r.length === 0) continue;
-
-          const startTimeRaw = r[iStart]?.trim();
-          const title = iTitle >= 0 && r[iTitle]?.trim() ? (r[iTitle] ?? "").trim() : "Workout";
-          const exTitle = r[iExTitle]?.trim();
-
-          if (!startTimeRaw || !exTitle) continue;
-
-          const parsedDate = parseWorkoutDate(startTimeRaw);
-          if (!parsedDate) continue;
-
-          const isoStartTime = parsedDate.toISOString();
-          const isoDate = isoStartTime.slice(0, 10);
-          const wKey = `${isoStartTime}_${title}`;
-
-          if (!workoutsMap[wKey]) {
-            workoutsMap[wKey] = {
-              date: isoDate,
-              startTime: isoStartTime,
-              title,
-              exercises: [],
-            } as unknown as HevyHistoryWorkout;
-          }
-
-          let exObj = workoutsMap[wKey].exercises.find((e) => e.title === exTitle);
-
-          if (!exObj) {
-            exObj = { title: exTitle, sets: [] };
-            workoutsMap[wKey].exercises.push(exObj);
-          }
-
-          const weightKg = parseFloat(iWeightKg >= 0 ? (r[iWeightKg] ?? "") : "");
-          const weightLbs = parseFloat(iWeightLbs >= 0 ? (r[iWeightLbs] ?? "") : "");
-          const reps = parseInt(iReps >= 0 ? (r[iReps] ?? "") : "", 10);
-          const rpe = parseFloat(iRpe >= 0 ? (r[iRpe] ?? "") : "");
-          const distance = parseFloat(iDistance >= 0 ? (r[iDistance] ?? "") : "");
-          const duration = parseFloat(iDuration >= 0 ? (r[iDuration] ?? "") : "");
-
-          const hasWeightKg = !isNaN(weightKg);
-          const hasWeightLbs = !isNaN(weightLbs);
-          const hasReps = !isNaN(reps);
-          const hasRpe = !isNaN(rpe);
-          const hasDistance = !isNaN(distance);
-          const hasDuration = !isNaN(duration);
-
-          if (!hasWeightKg && !hasWeightLbs && !hasReps && !hasRpe && !hasDistance && !hasDuration) {
-            exObj.sets.push({});
-            continue;
-          }
-
-          const parsedSet: any = {};
-          if (hasWeightKg) parsedSet.weightKg = weightKg;
-          if (hasWeightLbs) parsedSet.weightLbs = weightLbs;
-          if (hasReps) parsedSet.reps = reps;
-          if (hasRpe) parsedSet.rpe = rpe;
-          if (hasDistance) parsedSet.distance_meters = distance;
-          if (hasDuration) parsedSet.duration_seconds = duration;
-
-          exObj.sets.push(parsedSet);
-        }
-
-        const history = Object.values(workoutsMap).filter((workout) =>
-          workout.exercises.some((exercise) => exercise.sets.length > 0)
-        );
-
-        if (history.length === 0) {
-          toast.error("No valid workouts could be found in the CSV.");
-          return;
-        }
-
-        history.sort((a, b) => {
-          const aTime = parseWorkoutDate(a.startTime)?.getTime() ?? 0;
-          const bTime = parseWorkoutDate(b.startTime)?.getTime() ?? 0;
-          return bTime - aTime;
-        });
-
-        localStorage.setItem("p35_hevy_workouts", JSON.stringify(history));
-
-        const newest = history[0];
-        if (!newest) throw new Error("No workouts found in CSV.");
-
-        const latestWorkout: HevyWorkout = {
-          title: newest.title || "Hevy Workout",
-          startTime: newest.startTime || new Date().toISOString(),
-          exercises: newest.exercises ?? [],
-        } as HevyWorkout;
-
-        localStorage.setItem("p35_cached_workout", JSON.stringify(latestWorkout));
-        setCurrentWorkout(latestWorkout);
-
-        window.dispatchEvent(
-          new CustomEvent("p35:workout-updated", { detail: latestWorkout })
-        );
-
-        if (onWorkout) {
-          onWorkout(latestWorkout).catch((error) => {
-            console.error("Failed to sync imported workout:", error);
-          });
-        }
-
-        if (fileInputRef.current) fileInputRef.current.value = "";
-
-        toast.success(`Imported ${history.length} historical workouts. Latest session: ${latestWorkout.title}`);
-      } catch (error) {
-        console.error("Hevy CSV import error:", error);
-        toast.error("Something went wrong while importing the Hevy CSV.");
-      }
-    };
-
-    reader.readAsText(file);
   };
 
   const displayWorkout = currentWorkout || initialWorkout;
@@ -537,33 +271,10 @@ export function HevyCardLive({
         </p>
       )}
 
-      {/* ======================================================
-          SYNC & TEMPORARY IMPORT BUTTON
-          ====================================================== */}
-      <div className="mt-4 flex flex-col gap-2">
-        <Button className="w-full" onClick={() => void sync()} disabled={loading}>
-          {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-          Sync Hevy Workout
-        </Button>
-
-        <Button
-          variant="outline"
-          className="w-full gap-2"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={loading}
-        >
-          <Upload className="size-4" />
-          Import CSV History
-        </Button>
-      </div>
-
-      <input
-        type="file"
-        accept=".csv"
-        className="hidden"
-        ref={fileInputRef}
-        onChange={handleCSVUpload}
-      />
+      <Button className="mt-4 w-full" onClick={() => void sync()} disabled={loading}>
+        {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+        Sync Hevy Workout
+      </Button>
     </section>
   );
 }
