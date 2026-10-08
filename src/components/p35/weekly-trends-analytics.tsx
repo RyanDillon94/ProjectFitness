@@ -980,6 +980,113 @@ export function WeeklyTrendsAnalytics() {
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
               Volume and strength reflect the last 7 days compared against your rolling 4-week baseline. Volume is calculated from weight × reps.
             </p>
+import React from 'react';
+
+const MomentumDashboard = () => {
+  // Simulated data for the rolling 4-week comparison
+  const muscleData = [
+    { name: 'Chest', currentSets: 48, targetSets: 50, status: 'stable' }, // 96%
+    { name: 'Back', currentSets: 32, targetSets: 45, status: 'dropping' }, // 71%
+    { name: 'Shoulders', currentSets: 55, targetSets: 40, status: 'spiking' }, // 137%
+    { name: 'Biceps', currentSets: 28, targetSets: 30, status: 'stable' }, // 93%
+    { name: 'Triceps', currentSets: 22, targetSets: 32, status: 'dropping' }, // 68%
+    { name: 'Legs', currentSets: 40, targetSets: 40, status: 'stable' }, // 100%
+  ];
+
+  const getColor = (status) => {
+    if (status === 'stable') return 'bg-emerald-500';
+    if (status === 'dropping') return 'bg-rose-600';
+    if (status === 'spiking') return 'bg-amber-500';
+    return 'bg-slate-500';
+  };
+
+  const getTextColor = (status) => {
+    if (status === 'stable') return 'text-emerald-500';
+    if (status === 'dropping') return 'text-rose-600';
+    if (status === 'spiking') return 'text-amber-500';
+    return 'text-slate-500';
+  };
+
+  return (
+    <div className="bg-[#1a1f2e] text-slate-200 p-4 font-sans w-full max-w-md mx-auto rounded-2xl shadow-xl">
+      <div className="mb-6 border-b border-slate-700 pb-4">
+        <p className="text-xs text-slate-400 text-center leading-relaxed">
+          Adherence is calculated dynamically based on working sets completed over a rolling 4-week window compared to the previous 4 weeks.
+        </p>
+      </div>
+
+      <h2 className="text-xs font-bold text-slate-300 tracking-wider mb-4 uppercase">Training Momentum</h2>
+
+      {/* Top Level KPIs */}
+      <div className="flex gap-4 mb-6">
+        <div className="flex-1 bg-[#23293b] rounded-xl p-4 border border-slate-700/50 flex flex-col items-center justify-center">
+          <span className="text-[10px] text-slate-400 font-semibold tracking-wider mb-1">STRENGTH</span>
+          <span className="text-emerald-500 font-bold text-lg">+0.6% ↗</span>
+        </div>
+        <div className="flex-1 bg-[#23293b] rounded-xl p-4 border border-slate-700/50 flex flex-col items-center justify-center">
+          <span className="text-[10px] text-slate-400 font-semibold tracking-wider mb-1">TOTAL SETS (4W)</span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-slate-200 font-bold text-lg">225</span>
+            <span className="text-slate-500 text-xs">/ 237</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 12-Week Sparkline (Simulated) */}
+      <div className="bg-[#23293b] rounded-t-xl p-4 border-t border-x border-slate-700/50">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-[10px] text-slate-400 font-semibold tracking-wider">12-WEEK SET LOAD</span>
+        </div>
+        <svg className="w-full h-12" viewBox="0 0 100 30" preserveAspectRatio="none">
+          <path d="M0,25 L10,20 L20,28 L30,15 L40,18 L50,10 L60,12 L70,5 L80,15 L90,20 L100,18" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+
+      {/* Muscle Group Breakdown */}
+      <div className="bg-[#23293b] rounded-b-xl p-4 border border-slate-700/50">
+        <div className="flex justify-between text-[10px] text-slate-400 font-semibold tracking-wider mb-4 border-b border-slate-700/50 pb-2">
+          <span>MUSCLE GROUPS</span>
+          <span>SETS vs TARGET</span>
+        </div>
+
+        <div className="space-y-5">
+          {muscleData.map((muscle) => {
+            const fillPercentage = Math.min((muscle.currentSets / muscle.targetSets) * 100, 100);
+            
+            return (
+              <div key={muscle.name} className="flex flex-col gap-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-slate-200">{muscle.name}</span>
+                  <span className={`text-xs font-bold ${getTextColor(muscle.status)}`}>
+                    {muscle.currentSets} <span className="text-slate-500 font-normal">/ {muscle.targetSets}</span>
+                  </span>
+                </div>
+                
+                {/* Bullet Chart */}
+                <div className="relative w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                  {/* Fill Bar */}
+                  <div 
+                    className={`absolute top-0 left-0 h-full rounded-full transition-all duration-500 ${getColor(muscle.status)}`}
+                    style={{ width: `${fillPercentage}%` }}
+                  />
+                  {/* Target Line (representing the previous 4-week baseline) */}
+                  <div className="absolute top-0 bottom-0 left-[95%] w-0.5 bg-slate-300 z-10" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <button className="w-full mt-6 bg-[#23293b] hover:bg-slate-700 border border-slate-700/50 text-slate-200 py-3 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+        Open Hevy App
+      </button>
+    </div>
+  );
+};
+
+export default MomentumDashboard;
 
             {/* ==================================================
                 HEVY LINK
