@@ -297,15 +297,26 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   const baselineWindowStart = now - 56 * MS_PER_DAY;
   const baselineWindowEnd = currentWindowStart;
 
-  const parseDate = (date: string): number => {
-    const parts = date.split("-").map(Number);
+  // Replace your old parseDate function inside calculateTrainingProgress with this robust version
+const parseDate = (dateString: string): number => {
+  if (!dateString) return NaN;
 
-    if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
-      return NaN;
-    }
+  // 1. Try passing it to the native Date parser (works safely for YYYY-MM-DD or standard ISO)
+  const d = new Date(dateString);
+  if (!isNaN(d.getTime())) {
+    // Snap it to noon to avoid any timezone boundary/midnight slip bugs
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0).getTime();
+  }
 
+  // 2. Hard fallback if native parsing fails for some reason
+  const parts = dateString.split("-").map(Number);
+  if (parts.length === 3 && !parts.some(Number.isNaN)) {
     return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).getTime();
-  };
+  }
+  
+  return NaN;
+};
+
 
   // Only valid sets inside the full 56-day window are considered.
   const validSets = sets.filter((s) => {
