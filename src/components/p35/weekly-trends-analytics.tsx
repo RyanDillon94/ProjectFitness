@@ -27,6 +27,7 @@ import {
   LEG_MUSCLE_GROUPS,
   LegSubGroup,
 } from "@/lib/strengthMapping";
+import React from 'react';
 
 export function WeeklyTrendsAnalytics() {
   const [isOpen, setIsOpen] = useState(false);
@@ -980,7 +981,7 @@ export function WeeklyTrendsAnalytics() {
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
               Volume and strength reflect the last 7 days compared against your rolling 4-week baseline. Volume is calculated from weight × reps.
             </p>
-import React from 'react';
+
 
 const MomentumDashboard = () => {
   // Simulated data for the rolling 4-week comparison
