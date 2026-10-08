@@ -690,9 +690,9 @@ export function WeeklyTrendsAnalytics() {
                       const hasActivity =
                         data &&
                         (
-                          data.currentVolume >
+                          data.currentSets >
                             0 ||
-                          data.baselineVolume >
+                          data.baselineSets >
                             0
                         );
 
@@ -759,7 +759,7 @@ export function WeeklyTrendsAnalytics() {
                               {renderChangeBadge(
                                 data.strengthChange,
                                 hasActivity &&
-                                  data.baselineVolume >
+                                  data.baselineSets >
                                     0
                               )}
                             </div>
@@ -814,9 +814,9 @@ export function WeeklyTrendsAnalytics() {
                                       const hasSubActivity =
                                         subData &&
                                         (
-                                          subData.currentVolume >
+                                          subData.currentSets >
                                             0 ||
-                                          subData.baselineVolume >
+                                          subData.baselineSets >
                                             0
                                         );
 
@@ -884,7 +884,7 @@ export function WeeklyTrendsAnalytics() {
                                               {renderChangeBadge(
                                                 subData.strengthChange,
                                                 hasSubActivity &&
-                                                  subData.baselineVolume >
+                                                  subData.baselineSets >
                                                     0
                                               )}
                                             </div>
