@@ -169,7 +169,387 @@ export function HevyCardLive({
   };
 
   /*
-   * ============================================================
+   *
+
+  // ============================================================
+  // CSV IMPORT
+  // ============================================================
+
+  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result as string;
+
+        if (!text) {
+          toast.error("CSV file was empty.");
+
+          return;
+        }
+
+        // ======================================================
+        // CSV PARSER
+        // ======================================================
+
+        const arr: string[][] = [];
+
+        let quote = false;
+        let row: string[] = [];
+        let col = "";
+
+        for (let c = 0; c < text.length; c++) {
+          const cc = text[c];
+          const nc = text[c + 1];
+
+          if (cc === '"' && quote && nc === '"') {
+            col += cc;
+            c++;
+            continue;
+          }
+
+          if (cc === '"') {
+            quote = !quote;
+            continue;
+          }
+
+          if (cc === "," && !quote) {
+            row.push(col);
+            col = "";
+            continue;
+          }
+
+          if (cc === "\n" && !quote) {
+            row.push(col);
+            arr.push(row);
+            row = [];
+            col = "";
+            continue;
+          }
+
+          if (cc === "\r" && !quote) {
+            continue;
+          }
+
+          col += cc;
+        }
+
+        if (col || row.length > 0) {
+          row.push(col);
+        }
+
+        if (row.length > 0) {
+          arr.push(row);
+        }
+
+        if (arr.length < 2) {
+          toast.error("Invalid CSV format.");
+
+          return;
+        }
+
+        // ======================================================
+        // HEADERS
+        // ======================================================
+
+        const headers = (arr[0] ?? []).map((h) => h.trim().toLowerCase());
+
+        const findHeader = (...names: string[]) => {
+          for (const name of names) {
+            const index = headers.indexOf(name);
+
+            if (index >= 0) {
+              return index;
+            }
+          }
+
+          return -1;
+        };
+
+        const iStart = findHeader("start_time", "start time", "date");
+
+        const iTitle = findHeader("title", "workout_title", "workout title");
+
+        const iExTitle = findHeader("exercise_title", "exercise title", "exercise");
+
+        const iWeightKg = findHeader("weight_kg", "weight kg");
+
+        const iWeightLbs = findHeader("weight_lbs", "weight lbs");
+
+        const iReps = findHeader("reps", "repetitions");
+
+        const iRpe = findHeader("rpe");
+
+        const iDistance = findHeader("distance_meters", "distance meters", "distance");
+
+        const iDuration = findHeader("duration_seconds", "duration seconds", "duration");
+
+        if (iStart === -1 || iExTitle === -1) {
+          toast.error("Missing required columns. Are you sure this is a Hevy export?");
+
+          return;
+        }
+
+        // ======================================================
+        // WORKOUT MAP
+        // ======================================================
+
+        const workoutsMap: Record<string, HevyHistoryWorkout> = {};
+
+        // ======================================================
+        // PROCESS CSV ROWS
+        // ======================================================
+
+        for (let i = 1; i < arr.length; i++) {
+          const r = arr[i];
+
+          if (!r || r.length === 0) {
+            continue;
+          }
+
+          const startTimeRaw = r[iStart]?.trim();
+
+          const title = iTitle >= 0 && r[iTitle]?.trim() ? (r[iTitle] ?? "").trim() : "Workout";
+
+          const exTitle = r[iExTitle]?.trim();
+
+          if (!startTimeRaw || !exTitle) {
+            continue;
+          }
+
+          // ====================================================
+          // NORMALISE DATE
+          // ====================================================
+
+          const parsedDate = parseWorkoutDate(startTimeRaw);
+
+          if (!parsedDate) {
+            console.warn("Could not parse Hevy workout date:", startTimeRaw);
+
+            continue;
+          }
+
+          const isoStartTime = parsedDate.toISOString();
+
+          const isoDate = isoStartTime.slice(0, 10);
+
+          /*
+           * Include the actual timestamp in the key.
+           *
+           * This prevents two workouts on the same day with
+           * the same title from accidentally becoming one session.
+           */
+
+          const wKey = `${isoStartTime}_${title}`;
+
+          if (!workoutsMap[wKey]) {
+            workoutsMap[wKey] = {
+              date: isoDate,
+              startTime: isoStartTime,
+              title,
+              exercises: [],
+            };
+          }
+
+          // ====================================================
+          // FIND / CREATE EXERCISE
+          // ====================================================
+
+          let exObj = workoutsMap[wKey].exercises.find((e) => e.title === exTitle);
+
+          if (!exObj) {
+            exObj = {
+              title: exTitle,
+              sets: [],
+            };
+
+            workoutsMap[wKey].exercises.push(exObj);
+          }
+
+          // ====================================================
+          // PARSE SET
+          // ====================================================
+
+          const rawWeightKg = iWeightKg >= 0 ? (r[iWeightKg] ?? "") : "";
+
+          const rawWeightLbs = iWeightLbs >= 0 ? (r[iWeightLbs] ?? "") : "";
+
+          const rawReps = iReps >= 0 ? (r[iReps] ?? "") : "";
+
+          const rawRpe = iRpe >= 0 ? (r[iRpe] ?? "") : "";
+
+          const rawDistance = iDistance >= 0 ? (r[iDistance] ?? "") : "";
+
+          const rawDuration = iDuration >= 0 ? (r[iDuration] ?? "") : "";
+
+          const weightKg = rawWeightKg !== "" ? parseFloat(rawWeightKg) : NaN;
+
+          const weightLbs = rawWeightLbs !== "" ? parseFloat(rawWeightLbs) : NaN;
+
+          const reps = rawReps !== "" ? parseInt(rawReps, 10) : NaN;
+
+          const rpe = rawRpe !== "" ? parseFloat(rawRpe) : NaN;
+
+          const distance = rawDistance !== "" ? parseFloat(rawDistance) : NaN;
+
+          const duration = rawDuration !== "" ? parseFloat(rawDuration) : NaN;
+
+          const hasWeightKg = !isNaN(weightKg);
+
+          const hasWeightLbs = !isNaN(weightLbs);
+
+          const hasReps = !isNaN(reps);
+
+          const hasRpe = !isNaN(rpe);
+
+          const hasDistance = !isNaN(distance);
+
+          const hasDuration = !isNaN(duration);
+
+          /*
+           * Only discard the row if it contains absolutely
+           * no useful workout information.
+           */
+
+          if (
+            !hasWeightKg &&
+            !hasWeightLbs &&
+            !hasReps &&
+            !hasRpe &&
+            !hasDistance &&
+            !hasDuration
+          ) {
+            exObj.sets.push({});
+            continue;
+          }
+
+          const parsedSet: {
+            weightKg?: number;
+            weightLbs?: number;
+            reps?: number;
+            rpe?: number;
+            distance_meters?: number;
+            duration_seconds?: number;
+          } = {};
+
+          if (hasWeightKg) {
+            parsedSet.weightKg = weightKg;
+          }
+
+          if (hasWeightLbs) {
+            parsedSet.weightLbs = weightLbs;
+          }
+
+          if (hasReps) {
+            parsedSet.reps = reps;
+          }
+
+          if (hasRpe) {
+            parsedSet.rpe = rpe;
+          }
+
+          if (hasDistance) {
+            parsedSet.distance_meters = distance;
+          }
+
+          if (hasDuration) {
+            parsedSet.duration_seconds = duration;
+          }
+
+          exObj.sets.push(parsedSet);
+        }
+
+        // ======================================================
+        // BUILD HISTORY
+        // ======================================================
+
+        const history = Object.values(workoutsMap).filter((workout) =>
+          workout.exercises.some((exercise) => exercise.sets.length > 0),
+        );
+
+        if (history.length === 0) {
+          toast.error("No valid workouts could be found in the CSV.");
+
+          return;
+        }
+
+        // ======================================================
+        // SORT NEWEST FIRST
+        // ======================================================
+
+        history.sort((a, b) => {
+          const aTime = parseWorkoutDate(a.startTime)?.getTime() ?? 0;
+
+          const bTime = parseWorkoutDate(b.startTime)?.getTime() ?? 0;
+
+          return bTime - aTime;
+        });
+
+        // ======================================================
+        // SAVE COMPLETE HEVY HISTORY
+        // ======================================================
+
+        localStorage.setItem("p35_hevy_workouts", JSON.stringify(history));
+
+        // ======================================================
+        // MAKE NEWEST WORKOUT ACTIVE
+        // ======================================================
+
+        const newest = history[0];
+
+        if (!newest) {
+          throw new Error("No workouts found in CSV.");
+        }
+
+        const latestWorkout: ManualHevyWorkout = {
+          title: newest.title || "Hevy Workout",
+
+          startTime: newest.startTime || new Date().toISOString(),
+
+          exercises: newest.exercises ?? [],
+        };
+
+        localStorage.setItem("p35_cached_workout", JSON.stringify(latestWorkout));
+
+        setCurrentWorkout(latestWorkout);
+
+        window.dispatchEvent(
+          new CustomEvent("p35:workout-updated", {
+            detail: latestWorkout,
+          }),
+        );
+
+        if (onWorkout) {
+          onWorkout(latestWorkout).catch((error) => {
+            console.error("Failed to sync imported workout:", error);
+          });
+        }
+
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+
+        toast.success(
+          `Imported ${history.length} historical workouts. Latest session: ${latestWorkout.title}`,
+        );
+      } catch (error) {
+        console.error("Hevy CSV import error:", error);
+
+        toast.error("Something went wrong while importing the Hevy CSV.");
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
+  const displayWorkout = currentWorkout || initialWorkout;
+
+  return (
+    <section className="panel p-5"> ============================================================
    * TEMPORARY: IMPORT HEVY HISTORY
    * ============================================================
    *
