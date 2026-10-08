@@ -30,7 +30,10 @@ import {
 
 export function WeeklyTrendsAnalytics() {
   const [isOpen, setIsOpen] = useState(false);
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+
+  const [expandedGroup, setExpandedGroup] =
+    useState<string | null>(null);
+
   const [expandedLegSubGroup, setExpandedLegSubGroup] =
     useState<LegSubGroup | null>(null);
 
@@ -61,39 +64,41 @@ export function WeeklyTrendsAnalytics() {
       }
 
       const extracted: WorkoutSet[] = [];
-      const workouts = Array.isArray(parsed) ? parsed : [parsed];
+
+      const workouts = Array.isArray(parsed)
+        ? parsed
+        : [parsed];
 
       workouts.forEach((w: any) => {
-        if (!w) return;
-
-        // SAFELY parse the date without blindly defaulting to today.
-        let dateStr = w.date;
-        if (!dateStr) {
-          const st = w.startTime ?? w.start_time;
-          if (typeof st === "number") {
-            // Handle API UNIX epochs (convert to ms if it's in seconds)
-            const ms = st > 9999999999 ? st : st * 1000;
-            dateStr = new Date(ms).toISOString().slice(0, 10);
-          } else if (typeof st === "string") {
-            // Handle standard ISO strings
-            dateStr = st.slice(0, 10);
-          } else {
-            // If there's genuinely no date, skip it. Do NOT default to today.
-            return;
-          }
+        if (!w) {
+          return;
         }
 
-        const exercises = w.exercises || w.workout_exercises || [];
+        const date =
+          w.date ||
+          w.startTime?.slice(0, 10) ||
+          w.start_time?.slice(0, 10) ||
+          new Date().toISOString().slice(0, 10);
+
+        const exercises =
+          w.exercises ||
+          w.workout_exercises ||
+          [];
 
         if (!Array.isArray(exercises)) {
           return;
         }
 
         exercises.forEach((ex: any) => {
-          if (!ex) return;
+          if (!ex) {
+            return;
+          }
 
           const exerciseName =
-            ex.exercise_title || ex.title || ex.exercise?.title || "";
+            ex.exercise_title ||
+            ex.title ||
+            ex.exercise?.title ||
+            "";
 
           const exerciseSets = ex.sets || [];
 
@@ -102,31 +107,29 @@ export function WeeklyTrendsAnalytics() {
           }
 
           exerciseSets.forEach((s: any) => {
-            if (!s) return;
-
-            const setType = String(s.type ?? s.set_type ?? "").toLowerCase();
-
-            if (
-              setType === "warmup" ||
-              setType === "warm_up" ||
-              setType === "warm-up" ||
-              s.is_warmup === true ||
-              s.isWarmup === true
-            ) {
+            if (!s) {
               return;
             }
 
-            // Catch both KG and LBS if the CSV exporter threw them in different columns
-            const rawWeight = s.weightKg ?? s.weight ?? s.weight_kg ?? s.weightLbs ?? s.weight_lbs ?? 0;
+            const rawWeight =
+              s.weightKg ??
+              s.weight ??
+              s.weight_kg ??
+              0;
+
             const weight = Number(rawWeight);
             const reps = Number(s.reps ?? 0);
 
-            if (exerciseName && weight > 0 && reps > 0) {
+            if (
+              exerciseName &&
+              weight > 0 &&
+              reps > 0
+            ) {
               extracted.push({
                 exerciseName,
                 weight,
                 reps,
-                date: dateStr,
+                date,
               });
             }
           });
@@ -135,18 +138,25 @@ export function WeeklyTrendsAnalytics() {
 
       return extracted;
     } catch (err) {
-      console.error("Failed to parse workout history sets:", err);
+      console.error(
+        "Failed to parse workout history sets:",
+        err
+      );
+
       return [];
     }
   }, [isOpen]);
 
   /*
    * ============================================================
-   * TRAINING PROGRESS (last 4 weeks vs previous 4 weeks)
+   * TRAINING PROGRESS
    * ============================================================
    */
 
-  const progress = useMemo(() => calculateTrainingProgress(sets), [sets]);
+  const progress = useMemo(
+    () => calculateTrainingProgress(sets),
+    [sets]
+  );
 
   /*
    * ============================================================
@@ -164,35 +174,63 @@ export function WeeklyTrendsAnalytics() {
 
     for (let w = 0; w <= 3; w++) {
       const targetDate = new Date(today);
-      targetDate.setDate(targetDate.getDate() - w * 7);
+
+      targetDate.setDate(
+        targetDate.getDate() - w * 7
+      );
 
       const dayOfWeek = targetDate.getDay();
-      const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+      const daysSinceMonday =
+        dayOfWeek === 0
+          ? 6
+          : dayOfWeek - 1;
 
       const monday = new Date(targetDate);
-      monday.setDate(targetDate.getDate() - daysSinceMonday);
+
+      monday.setDate(
+        targetDate.getDate() -
+          daysSinceMonday
+      );
 
       let totalPossible = 0;
       let totalCompleted = 0;
 
       for (let i = 0; i < 7; i++) {
         const d = new Date(monday);
-        d.setDate(monday.getDate() + i);
 
-        if (d.getTime() > today.getTime() && w === 0) {
+        d.setDate(
+          monday.getDate() + i
+        );
+
+        if (
+          d.getTime() > today.getTime() &&
+          w === 0
+        ) {
           break;
         }
 
-        const k = d.toISOString().slice(0, 10);
-        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+        const k = d
+          .toISOString()
+          .slice(0, 10);
+
+        const isWeekend =
+          d.getDay() === 0 ||
+          d.getDay() === 6;
+
         const dayHabits = getActiveHabits(d);
 
-        let parsedHabits: Record<string, boolean> = {};
+        let parsedHabits: Record<
+          string,
+          boolean
+        > = {};
 
         const raw =
           typeof window === "undefined"
             ? null
-            : localStorage.getItem(`p35_habits_${k}`);
+            : localStorage.getItem(
+                `p35_habits_${k}`
+              );
 
         if (raw) {
           try {
@@ -203,16 +241,25 @@ export function WeeklyTrendsAnalytics() {
         }
 
         dayHabits.forEach((h) => {
-          const labelLower = h.label.toLowerCase();
+          const labelLower =
+            h.label.toLowerCase();
+
           const isLegacyWeekday =
             h.key === "workout_complete" ||
             h.key === "early_morning" ||
             labelLower.includes("workout") ||
-            /\d{1,2}:\d{2}\s*[ap]m/i.test(labelLower);
+            /\d{1,2}:\d{2}\s*[ap]m/i.test(
+              labelLower
+            );
 
-          const isWeekdayOnly = h.isWeekdayOnly ?? isLegacyWeekday;
+          const isWeekdayOnly =
+            h.isWeekdayOnly ??
+            isLegacyWeekday;
 
-          if (isWeekend && isWeekdayOnly) {
+          if (
+            isWeekend &&
+            isWeekdayOnly
+          ) {
             return;
           }
 
@@ -225,27 +272,45 @@ export function WeeklyTrendsAnalytics() {
       }
 
       const habitScore =
-        totalPossible > 0 ? (totalCompleted / totalPossible) * 100 : 0;
+        totalPossible > 0
+          ? (totalCompleted /
+              totalPossible) *
+            100
+          : 0;
 
-      const mondayKey = monday.toISOString().slice(0, 10);
+      const mondayKey = monday
+        .toISOString()
+        .slice(0, 10);
+
       let protocolScore = -1;
 
       try {
         const rawProtocol =
           typeof window === "undefined"
             ? null
-            : localStorage.getItem(`p35_weekly_protocol_${mondayKey}`);
+            : localStorage.getItem(
+                `p35_weekly_protocol_${mondayKey}`
+              );
 
         if (rawProtocol) {
-          const protocolGoals = JSON.parse(rawProtocol);
+          const protocolGoals =
+            JSON.parse(rawProtocol);
 
-          if (Array.isArray(protocolGoals) && protocolGoals.length > 0) {
-            const completedCount = protocolGoals.filter(
-              (g: any) => g.completed || g.status === "completed"
-            ).length;
+          if (
+            Array.isArray(protocolGoals) &&
+            protocolGoals.length > 0
+          ) {
+            const completedCount =
+              protocolGoals.filter(
+                (g: any) =>
+                  g.completed ||
+                  g.status === "completed"
+              ).length;
 
             protocolScore = Math.round(
-              (completedCount / protocolGoals.length) * 100
+              (completedCount /
+                protocolGoals.length) *
+                100
             );
           }
         }
@@ -253,20 +318,32 @@ export function WeeklyTrendsAnalytics() {
         protocolScore = -1;
       }
 
-      let finalScore = Math.round(habitScore);
+      let finalScore = Math.round(
+        habitScore
+      );
 
       if (protocolScore >= 0) {
-        finalScore = Math.round(habitScore * 0.7 + protocolScore * 0.3);
+        finalScore = Math.round(
+          habitScore * 0.7 +
+            protocolScore * 0.3
+        );
       }
 
-      const weekLabel = `Week of ${monday.toLocaleDateString("en-GB", {
-        month: "short",
-        day: "numeric",
-      })}`;
+      const weekLabel =
+        `Week of ${monday.toLocaleDateString(
+          "en-GB",
+          {
+            month: "short",
+            day: "numeric",
+          }
+        )}`;
 
       weeks.push({
         weekLabel,
-        score: Math.min(100, Math.max(0, finalScore)),
+        score: Math.min(
+          100,
+          Math.max(0, finalScore)
+        ),
       });
     }
 
@@ -274,28 +351,39 @@ export function WeeklyTrendsAnalytics() {
   }, [isOpen]);
 
   const averageScore = useMemo(() => {
-    const validWeeks = trendData.filter((w) => w.score > 0);
+    const validWeeks = trendData.filter(
+      (w) => w.score > 0
+    );
 
     if (validWeeks.length === 0) {
       return 0;
     }
 
     return Math.round(
-      validWeeks.reduce((acc, curr) => acc + curr.score, 0) / validWeeks.length
+      validWeeks.reduce(
+        (acc, curr) =>
+          acc + curr.score,
+        0
+      ) / validWeeks.length
     );
   }, [trendData]);
 
+  /*
+   * ============================================================
+   * CHANGE BADGE
+   * ============================================================
+   */
+
   const renderChangeBadge = (
     val: number,
-    hasData: boolean,
-    isNew: boolean = false
+    hasData: boolean
   ) => {
-    if (isNew) {
-      return <span className="text-primary font-semibold">NEW</span>;
-    }
-
     if (!hasData) {
-      return <span className="text-muted-foreground">—</span>;
+      return (
+        <span className="text-muted-foreground">
+          —
+        </span>
+      );
     }
 
     if (val > 0) {
@@ -323,66 +411,86 @@ export function WeeklyTrendsAnalytics() {
     );
   };
 
-  const renderExerciseTrend = (exercise: TopExercise, idx: number) => {
-    const e1rmPositive = exercise.percentChange > 0;
-    const e1rmNegative = exercise.percentChange < 0;
+  /*
+   * ============================================================
+   * EXERCISE TREND ROW
+   * ============================================================
+   *
+   * Shows:
+   * - Strength/e1RM percentage change
+   * - Volume percentage change
+   *
+   * NEW exercises:
+   * - Display NEW instead of +100%
+   *
+   * Raw e1RM and "e1RM"/"Vol" labels remain hidden.
+   */
 
-    const volumePositive = exercise.volumeChange > 0;
-    const volumeNegative = exercise.volumeChange < 0;
+  const renderExerciseTrend = (
+    exercise: TopExercise,
+    idx: number
+  ) => {
+    const e1rmPositive =
+      exercise.percentChange > 0;
 
-    const strengthClass = exercise.isDropped
-      ? "text-muted-foreground"
-      : exercise.isNew
-        ? "text-primary font-semibold"
-        : e1rmPositive
-          ? "text-emerald-500 font-semibold"
-          : e1rmNegative
-            ? "text-rose-500 font-semibold"
-            : "text-muted-foreground font-semibold";
+    const e1rmNegative =
+      exercise.percentChange < 0;
 
-    const volumeClass = exercise.isDropped
-      ? "text-muted-foreground"
-      : exercise.isNew
-        ? "text-primary font-semibold"
-        : volumePositive
-          ? "text-emerald-500 font-semibold"
-          : volumeNegative
-            ? "text-rose-500 font-semibold"
-            : "text-muted-foreground font-semibold";
+    const volumePositive =
+      exercise.volumeChange > 0;
 
-    const strengthText = exercise.isDropped
-      ? "—"
-      : exercise.isNew
-        ? "NEW"
-        : `${exercise.percentChange > 0 ? "+" : ""}${exercise.percentChange}%`;
-
-    const volumeText = exercise.isDropped
-      ? "—"
-      : exercise.isNew
-        ? "NEW"
-        : `${exercise.volumeChange > 0 ? "+" : ""}${exercise.volumeChange}%`;
+    const volumeNegative =
+      exercise.volumeChange < 0;
 
     return (
       <div
         key={`${exercise.exerciseName}-${idx}`}
         className="grid grid-cols-[minmax(0,1fr)_56px_56px] items-center gap-2 text-xs py-1.5 border-t border-border/20 first:border-0"
       >
-        <span
-          className={`truncate min-w-0 ${
-            exercise.isDropped ? "text-muted-foreground" : "text-foreground"
-          }`}
-        >
+        <span className="text-foreground truncate min-w-0">
           {exercise.exerciseName}
         </span>
 
-        <span className={`w-14 text-right ${strengthClass}`}>
-          {strengthText}
+        <span
+          className={`w-14 text-right ${
+            exercise.isNew
+              ? "text-primary font-semibold"
+              : e1rmPositive
+                ? "text-emerald-500 font-semibold"
+                : e1rmNegative
+                  ? "text-rose-500 font-semibold"
+                  : "text-muted-foreground font-semibold"
+          }`}
+        >
+          {exercise.isNew
+            ? "NEW"
+            : `${exercise.percentChange > 0 ? "+" : ""}${exercise.percentChange}%`}
         </span>
 
-        <span className={`w-14 text-right ${volumeClass}`}>{volumeText}</span>
+        <span
+          className={`w-14 text-right ${
+            exercise.isNew
+              ? "text-primary font-semibold"
+              : volumePositive
+                ? "text-emerald-500 font-semibold"
+                : volumeNegative
+                  ? "text-rose-500 font-semibold"
+                  : "text-muted-foreground font-semibold"
+          }`}
+        >
+          {exercise.isNew
+            ? "NEW"
+            : `${exercise.volumeChange > 0 ? "+" : ""}${exercise.volumeChange}%`}
+        </span>
       </div>
     );
   };
+
+  /*
+   * ============================================================
+   * GROUP TOGGLE
+   * ============================================================
+   */
 
   const handleGroupToggle = (
     group: string,
@@ -393,24 +501,32 @@ export function WeeklyTrendsAnalytics() {
       return;
     }
 
-    const nextExpanded = isExpanded ? null : group;
+    const nextExpanded =
+      isExpanded
+        ? null
+        : group;
+
     setExpandedGroup(nextExpanded);
 
-    if (group !== "Legs" || isExpanded) {
+    if (
+      group !== "Legs" ||
+      isExpanded
+    ) {
       setExpandedLegSubGroup(null);
     }
   };
 
-  const overallHasBaseline = progress.overallBaselineSets > 0;
-  const overallIsNew =
-    progress.overallBaselineSets === 0 && progress.overallCurrentSets > 0;
-
   return (
     <div className="w-full">
+      {/* ========================================================
+          CARD / TRIGGER
+          ======================================================== */}
+
       <Dialog
         open={isOpen}
         onOpenChange={(open) => {
           setIsOpen(open);
+
           if (!open) {
             setExpandedGroup(null);
             setExpandedLegSubGroup(null);
@@ -426,6 +542,7 @@ export function WeeklyTrendsAnalytics() {
                 <p className="text-sm font-bold truncate text-foreground">
                   Weekly Trends & Analytics
                 </p>
+
                 <p className="text-xs text-muted-foreground truncate w-full">
                   Review 4-week compliance history
                 </p>
@@ -443,6 +560,10 @@ export function WeeklyTrendsAnalytics() {
           </div>
         </DialogTrigger>
 
+        {/* ======================================================
+            ANALYTICS DIALOG
+            ====================================================== */}
+
         <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -452,11 +573,17 @@ export function WeeklyTrendsAnalytics() {
           </DialogHeader>
 
           <div className="space-y-5 pt-2">
+            {/* ==================================================
+                ADHERENCE SUMMARY
+                ================================================== */}
+
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
                 <p className="stat-label flex items-center justify-center gap-1">
                   <CheckCircle2 className="size-3.5 text-primary" />
-                  <span>4-Week Avg Adherence</span>
+                  <span>
+                    4-Week Avg Adherence
+                  </span>
                 </p>
 
                 <p className="font-display text-2xl font-bold text-primary">
@@ -467,7 +594,9 @@ export function WeeklyTrendsAnalytics() {
               <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
                 <p className="stat-label flex items-center justify-center gap-1">
                   <Flame className="size-3.5 text-amber-500" />
-                  <span>Execution Status</span>
+                  <span>
+                    Execution Status
+                  </span>
                 </p>
 
                 <p className="text-sm font-semibold text-foreground pt-1">
@@ -480,47 +609,62 @@ export function WeeklyTrendsAnalytics() {
               </div>
             </div>
 
+            {/* ==================================================
+                WEEKLY ADHERENCE
+                ================================================== */}
+
             <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Rolling 4 Week Adherence
               </p>
 
               <div className="space-y-3 pt-1">
-                {trendData.map((week, idx) => (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex justify-between text-xs font-medium">
-                      <span className="text-foreground">{week.weekLabel}</span>
-                      <span className="text-primary font-semibold">
-                        {week.score}%
-                      </span>
-                    </div>
+                {trendData.map(
+                  (week, idx) => (
+                    <div
+                      key={idx}
+                      className="space-y-1"
+                    >
+                      <div className="flex justify-between text-xs font-medium">
+                        <span className="text-foreground">
+                          {week.weekLabel}
+                        </span>
 
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-border/65">
-                      <div
-                        className="h-full bg-primary transition-all duration-500 rounded-full"
-                        style={{ width: `${week.score}%` }}
-                      />
+                        <span className="text-primary font-semibold">
+                          {week.score}%
+                        </span>
+                      </div>
+
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-border/65">
+                        <div
+                          className="h-full bg-primary transition-all duration-500 rounded-full"
+                          style={{
+                            width: `${week.score}%`,
+                          }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                )}
               </div>
             </div>
 
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-              Adherence is calculated dynamically based on weekday rules and
-              weekly execution protocol targets.
+              Adherence is calculated dynamically based on weekday rules and weekly execution protocol targets.
             </p>
 
-            <div className="mt-6 pt-5 border-t border-border space-y-4">
-              <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-                  Training Momentum
-                </h3>
+            {/* ==================================================
+                TRAINING MOMENTUM
+                ================================================== */}
 
-                <p className="text-xs text-muted-foreground">
-                  Last 4 weeks vs previous 4 weeks
-                </p>
-              </div>
+            <div className="mt-6 pt-5 border-t border-border space-y-4">
+              <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
+                Training Momentum
+              </h3>
+
+              {/* ==================================================
+                  OVERALL
+                  ================================================== */}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
@@ -531,217 +675,315 @@ export function WeeklyTrendsAnalytics() {
                   <div className="font-display text-xl font-bold pt-1">
                     {renderChangeBadge(
                       progress.overallStrengthChange,
-                      overallHasBaseline
+                      true
                     )}
                   </div>
                 </div>
 
                 <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
                   <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Volume (sets)
+                    Volume
                   </p>
 
                   <div className="font-display text-xl font-bold pt-1">
                     {renderChangeBadge(
                       progress.overallVolumeChange,
-                      overallHasBaseline,
-                      overallIsNew
+                      true
                     )}
                   </div>
                 </div>
               </div>
 
+              {/* ==================================================
+                  MUSCLE GROUP TABLE
+                  ================================================== */}
+
               <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
                 <div className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <span>Muscle Groups</span>
-                  <span className="w-16 text-right">Strength</span>
-                  <span className="w-16 text-right">Sets</span>
+                  <span>
+                    Muscle Groups
+                  </span>
+
+                  <span className="w-16 text-right">
+                    Strength
+                  </span>
+
+                  <span className="w-16 text-right">
+                    Volume
+                  </span>
                 </div>
 
                 <div className="space-y-3 pt-1">
-                  {MUSCLE_GROUPS.map((group) => {
-                    const data = progress.muscleGroups[group];
+                  {MUSCLE_GROUPS.map(
+                    (group) => {
+                      const data =
+                        progress.muscleGroups[
+                          group
+                        ];
 
-                    const hasActivity =
-                      data && (data.currentSets > 0 || data.baselineSets > 0);
+                      const hasActivity =
+                        data &&
+                        (
+                          data.currentVolume >
+                            0 ||
+                          data.baselineVolume >
+                            0
+                        );
 
-                    const isExpanded = expandedGroup === group;
-                    const groupIsNew =
-                      data && data.baselineSets === 0 && data.currentSets > 0;
+                      const isExpanded =
+                        expandedGroup ===
+                        group;
 
-                    return (
-                      <div
-                        key={group}
-                        className="border-b border-border/40 last:border-0 pb-1"
-                      >
+                      return (
                         <div
-                          onClick={() =>
-                            handleGroupToggle(group, hasActivity, isExpanded)
-                          }
-                          className={`grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 text-sm py-2 px-2 rounded-lg transition-colors ${
-                            hasActivity
-                              ? "cursor-pointer hover:bg-surface-2/80"
-                              : ""
-                          }`}
+                          key={group}
+                          className="border-b border-border/40 last:border-0 pb-1"
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-medium text-foreground truncate">
-                              {group}
-                            </span>
+                          <div
+                            onClick={() =>
+                              handleGroupToggle(
+                                group,
+                                hasActivity,
+                                isExpanded
+                              )
+                            }
+                            className={`grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 text-sm py-2 px-2 rounded-lg transition-colors ${
+                              hasActivity
+                                ? "cursor-pointer hover:bg-surface-2/80"
+                                : ""
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-medium text-foreground truncate">
+                                {group}
+                              </span>
 
-                            {hasActivity &&
-                              (group === "Legs"
-                                ? LEG_MUSCLE_GROUPS.some(
-                                    (subGroup) =>
-                                      data.legSubGroups[subGroup].topExercises
-                                        .length > 0
-                                  )
-                                : data.topExercises.length > 0) && (
-                                <ChevronDown
-                                  className={`size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${
-                                    isExpanded ? "rotate-180" : ""
-                                  }`}
-                                />
-                              )}
-                          </div>
+                              {hasActivity &&
+                                (
+                                  group ===
+                                  "Legs"
+                                    ? LEG_MUSCLE_GROUPS.some(
+                                        (
+                                          subGroup
+                                        ) =>
+                                          data
+                                            .legSubGroups[
+                                            subGroup
+                                          ]
+                                            .topExercises
+                                            .length >
+                                          0
+                                      )
+                                    : data
+                                        .topExercises
+                                        .length >
+                                      0
+                                ) && (
+                                  <ChevronDown
+                                    className={`size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${
+                                      isExpanded
+                                        ? "rotate-180"
+                                        : ""
+                                    }`}
+                                  />
+                                )}
+                            </div>
 
-                          <div className="w-16 text-right">
-                            {renderChangeBadge(
-                              data.strengthChange,
-                              hasActivity && data.baselineSets > 0
-                            )}
-                          </div>
-
-                          <div className="w-16 text-right">
-                            {renderChangeBadge(
-                              data.volumeChange,
-                              hasActivity,
-                              groupIsNew
-                            )}
-                          </div>
-                        </div>
-
-                        {isExpanded &&
-                          group !== "Legs" &&
-                          data.topExercises.length > 0 && (
-                            <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                Top Exercises (4-Week Trend)
-                              </p>
-
-                              {data.topExercises.map((exercise, idx) =>
-                                renderExerciseTrend(exercise, idx)
+                            <div className="w-16 text-right">
+                              {renderChangeBadge(
+                                data.strengthChange,
+                                hasActivity &&
+                                  data.baselineVolume >
+                                    0
                               )}
                             </div>
-                          )}
 
-                        {isExpanded && group === "Legs" && (
-                          <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
-                            <div className="space-y-1">
-                              {LEG_MUSCLE_GROUPS.map((subGroup) => {
-                                const subData = data.legSubGroups[subGroup];
+                            <div className="w-16 text-right">
+                              {renderChangeBadge(
+                                data.volumeChange,
+                                hasActivity
+                              )}
+                            </div>
+                          </div>
 
-                                const hasSubActivity =
-                                  subData &&
-                                  (subData.currentSets > 0 ||
-                                    subData.baselineSets > 0);
+                          {/* ==================================================
+                              NON-LEG MUSCLE GROUPS
+                              ================================================== */}
 
-                                const hasExercises =
-                                  subData.topExercises.length > 0;
+                          {isExpanded &&
+                            group !==
+                              "Legs" &&
+                            data.topExercises
+                              .length >
+                              0 && (
+                              <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  Top Exercises (4-Week Trend)
+                                </p>
 
-                                const isSubExpanded =
-                                  expandedLegSubGroup === subGroup;
+                                {data.topExercises.map(
+                                  (
+                                    exercise,
+                                    idx
+                                  ) =>
+                                    renderExerciseTrend(
+                                      exercise,
+                                      idx
+                                    )
+                                )}
+                              </div>
+                            )}
 
-                                const subIsNew =
-                                  subData.baselineSets === 0 &&
-                                  subData.currentSets > 0;
+                          {/* ==================================================
+                              LEGS → SUBGROUPS
+                              ================================================== */}
 
-                                return (
-                                  <div
-                                    key={subGroup}
-                                    className="border-b border-border/20 last:border-0"
-                                  >
-                                    <div
-                                      onClick={() => {
-                                        if (!hasSubActivity || !hasExercises) {
-                                          return;
-                                        }
+                          {isExpanded &&
+                            group ===
+                              "Legs" && (
+                              <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
+                                <div className="space-y-1">
+                                  {LEG_MUSCLE_GROUPS.map(
+                                    (
+                                      subGroup
+                                    ) => {
+                                      const subData =
+                                        data
+                                          .legSubGroups[
+                                          subGroup
+                                        ];
 
-                                        setExpandedLegSubGroup(
-                                          isSubExpanded ? null : subGroup
+                                      const hasSubActivity =
+                                        subData &&
+                                        (
+                                          subData.currentVolume >
+                                            0 ||
+                                          subData.baselineVolume >
+                                            0
                                         );
-                                      }}
-                                      className={`grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 text-xs py-2 px-2 rounded-md transition-colors ${
-                                        hasSubActivity && hasExercises
-                                          ? "cursor-pointer hover:bg-surface-2/80"
-                                          : "opacity-60"
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        {hasSubActivity && hasExercises ? (
-                                          <ChevronDown
-                                            className={`size-3 shrink-0 text-muted-foreground transition-transform duration-200 ${
-                                              isSubExpanded ? "rotate-180" : ""
+
+                                      const hasExercises =
+                                        subData
+                                          .topExercises
+                                          .length >
+                                        0;
+
+                                      const isSubExpanded =
+                                        expandedLegSubGroup ===
+                                        subGroup;
+
+                                      return (
+                                        <div
+                                          key={
+                                            subGroup
+                                          }
+                                          className="border-b border-border/20 last:border-0"
+                                        >
+                                          <div
+                                            onClick={() => {
+                                              if (
+                                                !hasSubActivity ||
+                                                !hasExercises
+                                              ) {
+                                                return;
+                                              }
+
+                                              setExpandedLegSubGroup(
+                                                isSubExpanded
+                                                  ? null
+                                                  : subGroup
+                                              );
+                                            }}
+                                            className={`grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 text-xs py-2 px-2 rounded-md transition-colors ${
+                                              hasSubActivity &&
+                                              hasExercises
+                                                ? "cursor-pointer hover:bg-surface-2/80"
+                                                : "opacity-60"
                                             }`}
-                                          />
-                                        ) : (
-                                          <span className="size-3 shrink-0" />
-                                        )}
+                                          >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                              {hasSubActivity &&
+                                              hasExercises ? (
+                                                <ChevronDown
+                                                  className={`size-3 shrink-0 text-muted-foreground transition-transform duration-200 ${
+                                                    isSubExpanded
+                                                      ? "rotate-180"
+                                                      : ""
+                                                  }`}
+                                                />
+                                              ) : (
+                                                <span className="size-3 shrink-0" />
+                                              )}
 
-                                        <span className="font-semibold text-foreground truncate">
-                                          {subGroup}
-                                        </span>
-                                      </div>
+                                              <span className="font-semibold text-foreground truncate">
+                                                {
+                                                  subGroup
+                                                }
+                                              </span>
+                                            </div>
 
-                                      <div className="w-16 text-right">
-                                        {renderChangeBadge(
-                                          subData.strengthChange,
-                                          hasSubActivity &&
-                                            subData.baselineSets > 0
-                                        )}
-                                      </div>
+                                            <div className="w-16 text-right">
+                                              {renderChangeBadge(
+                                                subData.strengthChange,
+                                                hasSubActivity &&
+                                                  subData.baselineVolume >
+                                                    0
+                                              )}
+                                            </div>
 
-                                      <div className="w-16 text-right">
-                                        {renderChangeBadge(
-                                          subData.volumeChange,
-                                          hasSubActivity,
-                                          subIsNew
-                                        )}
-                                      </div>
-                                    </div>
+                                            <div className="w-16 text-right">
+                                              {renderChangeBadge(
+                                                subData.volumeChange,
+                                                hasSubActivity
+                                              )}
+                                            </div>
+                                          </div>
 
-                                    {isSubExpanded && hasExercises && (
-                                      <div className="ml-4 mr-1 mb-2 px-2.5 py-2 rounded-md bg-surface-2/40 border border-border/30 space-y-1">
-                                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">
-                                          Top Exercises (4-Week Trend)
-                                        </p>
+                                          {/* ==================================================
+                                              SUBGROUP → EXERCISES
+                                              ================================================== */}
 
-                                        {subData.topExercises.map(
-                                          (exercise, idx) =>
-                                            renderExerciseTrend(exercise, idx)
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                                          {isSubExpanded &&
+                                            hasExercises && (
+                                            <div className="ml-4 mr-1 mb-2 px-2.5 py-2 rounded-md bg-surface-2/40 border border-border/30 space-y-1">
+                                              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">
+                                                Top Exercises (4-Week Trend)
+                                              </p>
+
+                                              {subData.topExercises.map(
+                                                (
+                                                  exercise,
+                                                  idx
+                                                ) =>
+                                                  renderExerciseTrend(
+                                                    exercise,
+                                                    idx
+                                                  )
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                        </div>
+                      );
+                    }
+                  )}
                 </div>
               </div>
             </div>
 
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-              Compares your last 4 weeks against the 4 weeks before. Headline
-              and muscle group volume count working sets. Strength is your best
-              estimated 1RM, and exercise volume is weight × reps. Warm-up sets
-              are excluded. "—" on an exercise means it wasn't performed in the
-              last 4 weeks.
+              Volume and strength reflect the last 7 days compared against your rolling 4-week baseline. Volume is calculated from weight × reps.
             </p>
+
+            {/* ==================================================
+                HEVY LINK
+                ================================================== */}
 
             <div className="pt-2">
               <a
