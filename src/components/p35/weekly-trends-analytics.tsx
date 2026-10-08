@@ -30,9 +30,7 @@ import {
 
 export function WeeklyTrendsAnalytics() {
   const [isOpen, setIsOpen] = useState(false);
-
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
-
   const [expandedLegSubGroup, setExpandedLegSubGroup] =
     useState<LegSubGroup | null>(null);
 
@@ -63,19 +61,27 @@ export function WeeklyTrendsAnalytics() {
       }
 
       const extracted: WorkoutSet[] = [];
-
       const workouts = Array.isArray(parsed) ? parsed : [parsed];
 
       workouts.forEach((w: any) => {
-        if (!w) {
-          return;
-        }
+        if (!w) return;
 
-        const date =
-          w.date ||
-          w.startTime?.slice(0, 10) ||
-          w.start_time?.slice(0, 10) ||
-          new Date().toISOString().slice(0, 10);
+        // SAFELY parse the date without blindly defaulting to today.
+        let dateStr = w.date;
+        if (!dateStr) {
+          const st = w.startTime ?? w.start_time;
+          if (typeof st === "number") {
+            // Handle API UNIX epochs (convert to ms if it's in seconds)
+            const ms = st > 9999999999 ? st : st * 1000;
+            dateStr = new Date(ms).toISOString().slice(0, 10);
+          } else if (typeof st === "string") {
+            // Handle standard ISO strings
+            dateStr = st.slice(0, 10);
+          } else {
+            // If there's genuinely no date, skip it. Do NOT default to today.
+            return;
+          }
+        }
 
         const exercises = w.exercises || w.workout_exercises || [];
 
@@ -84,9 +90,7 @@ export function WeeklyTrendsAnalytics() {
         }
 
         exercises.forEach((ex: any) => {
-          if (!ex) {
-            return;
-          }
+          if (!ex) return;
 
           const exerciseName =
             ex.exercise_title || ex.title || ex.exercise?.title || "";
@@ -98,15 +102,8 @@ export function WeeklyTrendsAnalytics() {
           }
 
           exerciseSets.forEach((s: any) => {
-            if (!s) {
-              return;
-            }
+            if (!s) return;
 
-            /*
-             * Skip warm-up sets so they don't inflate volume.
-             * Hevy marks them with type: "warmup". The other checks
-             * cover alternative field names in cached data.
-             */
             const setType = String(s.type ?? s.set_type ?? "").toLowerCase();
 
             if (
@@ -119,8 +116,8 @@ export function WeeklyTrendsAnalytics() {
               return;
             }
 
-            const rawWeight = s.weightKg ?? s.weight ?? s.weight_kg ?? 0;
-
+            // Catch both KG and LBS if the CSV exporter threw them in different columns
+            const rawWeight = s.weightKg ?? s.weight ?? s.weight_kg ?? s.weightLbs ?? s.weight_lbs ?? 0;
             const weight = Number(rawWeight);
             const reps = Number(s.reps ?? 0);
 
@@ -129,7 +126,7 @@ export function WeeklyTrendsAnalytics() {
                 exerciseName,
                 weight,
                 reps,
-                date,
+                date: dateStr,
               });
             }
           });
@@ -139,7 +136,6 @@ export function WeeklyTrendsAnalytics() {
       return extracted;
     } catch (err) {
       console.error("Failed to parse workout history sets:", err);
-
       return [];
     }
   }, [isOpen]);
@@ -168,15 +164,12 @@ export function WeeklyTrendsAnalytics() {
 
     for (let w = 0; w <= 3; w++) {
       const targetDate = new Date(today);
-
       targetDate.setDate(targetDate.getDate() - w * 7);
 
       const dayOfWeek = targetDate.getDay();
-
       const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
 
       const monday = new Date(targetDate);
-
       monday.setDate(targetDate.getDate() - daysSinceMonday);
 
       let totalPossible = 0;
@@ -184,7 +177,6 @@ export function WeeklyTrendsAnalytics() {
 
       for (let i = 0; i < 7; i++) {
         const d = new Date(monday);
-
         d.setDate(monday.getDate() + i);
 
         if (d.getTime() > today.getTime() && w === 0) {
@@ -192,9 +184,7 @@ export function WeeklyTrendsAnalytics() {
         }
 
         const k = d.toISOString().slice(0, 10);
-
         const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-
         const dayHabits = getActiveHabits(d);
 
         let parsedHabits: Record<string, boolean> = {};
@@ -214,7 +204,6 @@ export function WeeklyTrendsAnalytics() {
 
         dayHabits.forEach((h) => {
           const labelLower = h.label.toLowerCase();
-
           const isLegacyWeekday =
             h.key === "workout_complete" ||
             h.key === "early_morning" ||
@@ -239,7 +228,6 @@ export function WeeklyTrendsAnalytics() {
         totalPossible > 0 ? (totalCompleted / totalPossible) * 100 : 0;
 
       const mondayKey = monday.toISOString().slice(0, 10);
-
       let protocolScore = -1;
 
       try {
@@ -297,15 +285,6 @@ export function WeeklyTrendsAnalytics() {
     );
   }, [trendData]);
 
-  /*
-   * ============================================================
-   * CHANGE BADGE
-   * ============================================================
-   *
-   * isNew   = true  → primary-coloured "NEW" (instead of +100%)
-   * hasData = false → grey "—"
-   */
-
   const renderChangeBadge = (
     val: number,
     hasData: boolean,
@@ -343,18 +322,6 @@ export function WeeklyTrendsAnalytics() {
       </span>
     );
   };
-
-  /*
-   * ============================================================
-   * EXERCISE TREND ROW
-   * ============================================================
-   *
-   * Strength column: best e1RM, last 4 weeks vs previous 4 weeks.
-   * Volume column:   tonnage (weight × reps), same windows.
-   *
-   * NEW exercises     → "NEW" (instead of +100%)
-   * Dropped exercises → grey "—" (instead of -100%)
-   */
 
   const renderExerciseTrend = (exercise: TopExercise, idx: number) => {
     const e1rmPositive = exercise.percentChange > 0;
@@ -417,12 +384,6 @@ export function WeeklyTrendsAnalytics() {
     );
   };
 
-  /*
-   * ============================================================
-   * GROUP TOGGLE
-   * ============================================================
-   */
-
   const handleGroupToggle = (
     group: string,
     hasActivity: boolean,
@@ -433,7 +394,6 @@ export function WeeklyTrendsAnalytics() {
     }
 
     const nextExpanded = isExpanded ? null : group;
-
     setExpandedGroup(nextExpanded);
 
     if (group !== "Legs" || isExpanded) {
@@ -447,15 +407,10 @@ export function WeeklyTrendsAnalytics() {
 
   return (
     <div className="w-full">
-      {/* ========================================================
-          CARD / TRIGGER
-          ======================================================== */}
-
       <Dialog
         open={isOpen}
         onOpenChange={(open) => {
           setIsOpen(open);
-
           if (!open) {
             setExpandedGroup(null);
             setExpandedLegSubGroup(null);
@@ -471,7 +426,6 @@ export function WeeklyTrendsAnalytics() {
                 <p className="text-sm font-bold truncate text-foreground">
                   Weekly Trends & Analytics
                 </p>
-
                 <p className="text-xs text-muted-foreground truncate w-full">
                   Review 4-week compliance history
                 </p>
@@ -489,10 +443,6 @@ export function WeeklyTrendsAnalytics() {
           </div>
         </DialogTrigger>
 
-        {/* ======================================================
-            ANALYTICS DIALOG
-            ====================================================== */}
-
         <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -502,10 +452,6 @@ export function WeeklyTrendsAnalytics() {
           </DialogHeader>
 
           <div className="space-y-5 pt-2">
-            {/* ==================================================
-                ADHERENCE SUMMARY
-                ================================================== */}
-
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
                 <p className="stat-label flex items-center justify-center gap-1">
@@ -534,10 +480,6 @@ export function WeeklyTrendsAnalytics() {
               </div>
             </div>
 
-            {/* ==================================================
-                WEEKLY ADHERENCE
-                ================================================== */}
-
             <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Rolling 4 Week Adherence
@@ -548,7 +490,6 @@ export function WeeklyTrendsAnalytics() {
                   <div key={idx} className="space-y-1">
                     <div className="flex justify-between text-xs font-medium">
                       <span className="text-foreground">{week.weekLabel}</span>
-
                       <span className="text-primary font-semibold">
                         {week.score}%
                       </span>
@@ -570,10 +511,6 @@ export function WeeklyTrendsAnalytics() {
               weekly execution protocol targets.
             </p>
 
-            {/* ==================================================
-                TRAINING MOMENTUM
-                ================================================== */}
-
             <div className="mt-6 pt-5 border-t border-border space-y-4">
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
@@ -584,10 +521,6 @@ export function WeeklyTrendsAnalytics() {
                   Last 4 weeks vs previous 4 weeks
                 </p>
               </div>
-
-              {/* ==================================================
-                  OVERALL
-                  ================================================== */}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
@@ -618,16 +551,10 @@ export function WeeklyTrendsAnalytics() {
                 </div>
               </div>
 
-              {/* ==================================================
-                  MUSCLE GROUP TABLE
-                  ================================================== */}
-
               <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
                 <div className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   <span>Muscle Groups</span>
-
                   <span className="w-16 text-right">Strength</span>
-
                   <span className="w-16 text-right">Sets</span>
                 </div>
 
@@ -639,8 +566,6 @@ export function WeeklyTrendsAnalytics() {
                       data && (data.currentSets > 0 || data.baselineSets > 0);
 
                     const isExpanded = expandedGroup === group;
-
-                    // NEW at group level: trained now, nothing in the baseline.
                     const groupIsNew =
                       data && data.baselineSets === 0 && data.currentSets > 0;
 
@@ -696,10 +621,6 @@ export function WeeklyTrendsAnalytics() {
                           </div>
                         </div>
 
-                        {/* ==================================================
-                            NON-LEG MUSCLE GROUPS
-                            ================================================== */}
-
                         {isExpanded &&
                           group !== "Legs" &&
                           data.topExercises.length > 0 && (
@@ -713,10 +634,6 @@ export function WeeklyTrendsAnalytics() {
                               )}
                             </div>
                           )}
-
-                        {/* ==================================================
-                            LEGS → SUBGROUPS
-                            ================================================== */}
 
                         {isExpanded && group === "Legs" && (
                           <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
@@ -793,10 +710,6 @@ export function WeeklyTrendsAnalytics() {
                                       </div>
                                     </div>
 
-                                    {/* ==================================================
-                                        SUBGROUP → EXERCISES
-                                        ================================================== */}
-
                                     {isSubExpanded && hasExercises && (
                                       <div className="ml-4 mr-1 mb-2 px-2.5 py-2 rounded-md bg-surface-2/40 border border-border/30 space-y-1">
                                         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">
@@ -829,10 +742,6 @@ export function WeeklyTrendsAnalytics() {
               are excluded. "—" on an exercise means it wasn't performed in the
               last 4 weeks.
             </p>
-
-            {/* ==================================================
-                HEVY LINK
-                ================================================== */}
 
             <div className="pt-2">
               <a
