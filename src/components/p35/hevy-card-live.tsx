@@ -11,8 +11,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { fetchLatestHevyWorkout, type HevyWorkout } from "@/lib/hevy.functions";
-import { Activity, Loader2, RefreshCw, Settings } from "lucide-react";
+import {
+  fetchLatestHevyWorkout,
+  // TEMPORARY IMPORT: remove this when you remove the import button.
+  importHevyHistory,
+  type HevyWorkout,
+} from "@/lib/hevy.functions";
+import { Activity, Download, Loader2, RefreshCw, Settings } from "lucide-react";
 import { toast } from "sonner";
 
 function isCardioExercise(exerciseTitle: string, sets: any[]): boolean {
@@ -70,7 +75,7 @@ function formatWeight(weight: number | null | undefined, exerciseTitle: string) 
   if (weight == null) return "BW";
 
   const titleLower = exerciseTitle.toLowerCase();
-  
+
   // Exclude "lat pulldown" from being caught by the "cable" keyword
   const isCableOrLbs =
     (titleLower.includes("cable") && !titleLower.includes("lat pulldown")) ||
@@ -86,7 +91,6 @@ function formatWeight(weight: number | null | undefined, exerciseTitle: string) 
   const roundedKg = Number.isInteger(weight) ? weight : Math.round(weight * 10) / 10;
   return `${roundedKg}kg`;
 }
-
 
 export function HevyCardLive({
   workout: initialWorkout,
@@ -109,6 +113,9 @@ export function HevyCardLive({
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // TEMPORARY IMPORT: remove this state when you remove the import button.
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (initialApiKey && !activeKey) {
@@ -158,6 +165,59 @@ export function HevyCardLive({
       toast.error(error instanceof Error ? error.message : "Hevy sync failed.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  /*
+   * ============================================================
+   * TEMPORARY: IMPORT HEVY HISTORY
+   * ============================================================
+   *
+   * Pulls the last 120 days of workouts into "p35_hevy_workouts".
+   * Safe to run more than once (merged by workout id).
+   *
+   * Remove this function, the `importing` state, the importHevyHistory
+   * import, the Download icon import and the button below when done.
+   */
+  const importHistory = async () => {
+    const keyToUse = activeKey.trim();
+    if (!keyToUse) {
+      setSettingsOpen(true);
+      toast.error("Add your Hevy API key first.");
+      return;
+    }
+
+    setImporting(true);
+
+    try {
+      const result = await importHevyHistory({
+        data: { apiKey: keyToUse, sinceDays: 120 },
+      });
+
+      if (result.imported === 0) {
+        toast.error("No workouts found in the last 120 days.");
+        return;
+      }
+
+      const earliestLabel = result.earliest
+        ? new Date(result.earliest).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : null;
+
+      toast.success(
+        `Imported ${result.imported} workouts${
+          earliestLabel ? ` back to ${earliestLabel}` : ""
+        }. ${result.total} stored in total.`
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Hevy history import failed."
+      );
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -271,9 +331,23 @@ export function HevyCardLive({
         </p>
       )}
 
-      <Button className="mt-4 w-full" onClick={() => void sync()} disabled={loading}>
+      <Button className="mt-4 w-full" onClick={() => void sync()} disabled={loading || importing}>
         {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
         Sync Hevy Workout
+      </Button>
+
+      {/* ======================================================
+          TEMPORARY: IMPORT HISTORY BUTTON
+          Delete this block after the import is done.
+          ====================================================== */}
+      <Button
+        variant="outline"
+        className="mt-2 w-full"
+        onClick={() => void importHistory()}
+        disabled={loading || importing}
+      >
+        {importing ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+        {importing ? "Importing history…" : "Import Hevy History (120 days)"}
       </Button>
     </section>
   );
