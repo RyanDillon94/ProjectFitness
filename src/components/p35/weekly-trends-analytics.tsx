@@ -17,7 +17,6 @@ import {
   ExternalLink,
   Lightbulb,
 } from "lucide-react";
-import { getActiveHabits } from "@/lib/project35";
 import {
   calculateTrainingProgress,
   WorkoutSet,
@@ -79,80 +78,59 @@ export function WeeklyTrendsAnalytics() {
 
   const progress = useMemo(() => calculateTrainingProgress(sets), [sets]);
 
+  /*
+   * ============================================================
+   * ROLLING ADHERENCE FROM LOCKED-IN ARCHIVES
+   * ============================================================
+   */
   const trendData = useMemo(() => {
-    const weeks: { weekLabel: string; score: number }[] = [];
-    const today = new Date();
+    if (typeof window === "undefined") return [];
 
-    for (let w = 0; w <= 3; w++) {
-      const targetDate = new Date(today);
-      targetDate.setDate(targetDate.getDate() - w * 7);
-      const dayOfWeek = targetDate.getDay();
-      const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      const monday = new Date(targetDate);
-      monday.setDate(targetDate.getDate() - daysSinceMonday);
+    const loadedArchives: { date: string; score: number; dateRange?: string }[] = [];
 
-      let totalPossible = 0;
-      let totalCompleted = 0;
-
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(monday);
-        d.setDate(monday.getDate() + i);
-        if (d.getTime() > today.getTime() && w === 0) break;
-
-        const k = d.toISOString().slice(0, 10);
-        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-        const dayHabits = getActiveHabits(d);
-        let parsedHabits: Record<string, boolean> = {};
-
-        const raw = typeof window === "undefined" ? null : localStorage.getItem(`p35_habits_${k}`);
-        if (raw) {
-          try { parsedHabits = JSON.parse(raw); } catch { parsedHabits = {}; }
-        }
-
-        dayHabits.forEach((h) => {
-          const labelLower = h.label.toLowerCase();
-          const isLegacyWeekday = h.key === "workout_complete" || h.key === "early_morning" || labelLower.includes("workout") || /\d{1,2}:\d{2}\s*[ap]m/i.test(labelLower);
-          const isWeekdayOnly = h.isWeekdayOnly ?? isLegacyWeekday;
-          if (isWeekend && isWeekdayOnly) return;
-
-          totalPossible++;
-          if (parsedHabits[h.key]) totalCompleted++;
-        });
-      }
-
-      const habitScore = totalPossible > 0 ? (totalCompleted / totalPossible) * 100 : 0;
-      const mondayKey = monday.toISOString().slice(0, 10);
-      let protocolScore = -1;
-
-      try {
-        const rawProtocol = typeof window === "undefined" ? null : localStorage.getItem(`p35_weekly_protocol_${mondayKey}`);
-        if (rawProtocol) {
-          const protocolGoals = JSON.parse(rawProtocol);
-          if (Array.isArray(protocolGoals) && protocolGoals.length > 0) {
-            const completedCount = protocolGoals.filter((g: any) => g.completed || g.status === "completed").length;
-            protocolScore = Math.round((completedCount / protocolGoals.length) * 100);
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith("p35_finalised_week_")) {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key) || "{}");
+          if (parsed.date && typeof parsed.overallPercentage === "number") {
+            loadedArchives.push({
+              date: parsed.date,
+              score: parsed.overallPercentage,
+              dateRange: parsed.dateRange,
+            });
           }
+        } catch (e) {
+          console.error("Failed to parse archived week for trends", e);
         }
-      } catch {
-        protocolScore = -1;
       }
-
-      let finalScore = Math.round(habitScore);
-      if (protocolScore >= 0) {
-        finalScore = Math.round(habitScore * 0.7 + protocolScore * 0.3);
-      }
-
-      const weekLabel = `Week of ${monday.toLocaleDateString("en-GB", { month: "short", day: "numeric" })}`;
-      weeks.push({ weekLabel, score: Math.min(100, Math.max(0, finalScore)) });
     }
 
-    return weeks;
+    // Sort descending by date (most recent first)
+    loadedArchives.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    // Take the last 4 finalized weeks
+    const recent4 = loadedArchives.slice(0, 4).reverse();
+
+    return recent4.map((archive) => {
+      const endDate = new Date(archive.date);
+      const weekLabel = `Week of ${endDate.toLocaleDateString("en-GB", {
+        month: "short",
+        day: "numeric",
+      })}`;
+
+      return {
+        weekLabel: archive.dateRange || weekLabel,
+        score: Math.min(100, Math.max(0, archive.score)),
+      };
+    });
   }, [isOpen]);
 
   const averageScore = useMemo(() => {
-    const validWeeks = trendData.filter((w) => w.score > 0);
-    if (validWeeks.length === 0) return 0;
-    return Math.round(validWeeks.reduce((acc, curr) => acc + curr.score, 0) / validWeeks.length);
+    if (trendData.length === 0) return 0;
+    return Math.round(
+      trendData.reduce((acc, curr) => acc + curr.score, 0) / trendData.length
+    );
   }, [trendData]);
 
   const getOverallCoachNote = (val: number) => {
@@ -290,24 +268,28 @@ export function WeeklyTrendsAnalytics() {
               </div>
             </div>
 
-            {/* ROLLING 4 WEEK ADHERENCE PROGRESS BARS */}
+            {/* ROLLING 4 WEEK ADHERENCE PROGRESS BARS (LOCKED-IN ARCHIVES) */}
             <div className="space-y-2.5 rounded-xl border border-border/60 bg-surface-2/20 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Rolling 4 Week Adherence</p>
               <div className="space-y-3 pt-1">
-                {trendData.map((week, idx) => (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex justify-between text-xs font-medium">
-                      <span className="text-foreground">{week.weekLabel}</span>
-                      <span className="text-primary font-semibold">{week.score}%</span>
+                {trendData.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-2">No finalized weekly archives found yet.</p>
+                ) : (
+                  trendData.map((week, idx) => (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex justify-between text-xs font-medium">
+                        <span className="text-foreground">{week.weekLabel}</span>
+                        <span className="text-primary font-semibold">{week.score}%</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-border/65">
+                        <div
+                          className="h-full bg-primary transition-all duration-500 rounded-full"
+                          style={{ width: `${week.score}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-border/65">
-                      <div
-                        className="h-full bg-primary transition-all duration-500 rounded-full"
-                        style={{ width: `${week.score}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
