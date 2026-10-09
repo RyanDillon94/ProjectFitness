@@ -11,8 +11,6 @@ import {
   BarChart3,
   CheckCircle2,
   Flame,
-  ArrowUpRight,
-  ArrowDownRight,
   ChevronDown,
   ExternalLink,
 } from "lucide-react";
@@ -370,7 +368,7 @@ export function WeeklyTrendsAnalytics() {
 
   /*
    * ============================================================
-   * CHANGE BADGE
+   * CHANGE BADGE (TEXT COLOR ONLY)
    * ============================================================
    */
 
@@ -380,7 +378,7 @@ export function WeeklyTrendsAnalytics() {
   ) => {
     if (!hasData) {
       return (
-        <span className="text-muted-foreground">
+        <span className="text-muted-foreground font-semibold">
           —
         </span>
       );
@@ -388,25 +386,23 @@ export function WeeklyTrendsAnalytics() {
 
     if (val > 0) {
       return (
-        <span className="inline-flex items-center gap-0.5 text-emerald-500 font-semibold">
+        <span className="text-emerald-500 font-semibold">
           +{val}%
-          <ArrowUpRight className="size-3.5" />
         </span>
       );
     }
 
     if (val < 0) {
       return (
-        <span className="inline-flex items-center gap-0.5 text-rose-500 font-semibold">
+        <span className="text-rose-500 font-semibold">
           {val}%
-          <ArrowDownRight className="size-3.5" />
         </span>
       );
     }
 
     return (
-      <span className="inline-flex items-center gap-0.5 text-muted-foreground font-semibold">
-        0.0% →
+      <span className="text-muted-foreground font-semibold">
+        0.0%
       </span>
     );
   };
@@ -415,15 +411,6 @@ export function WeeklyTrendsAnalytics() {
    * ============================================================
    * EXERCISE TREND ROW
    * ============================================================
-   *
-   * Shows:
-   * - Strength/e1RM percentage change
-   * - Volume percentage change
-   *
-   * NEW exercises:
-   * - Display NEW instead of +100%
-   *
-   * Raw e1RM and "e1RM"/"Vol" labels remain hidden.
    */
 
   const renderExerciseTrend = (
@@ -978,7 +965,7 @@ export function WeeklyTrendsAnalytics() {
             </div>
 
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-              Volume and strength reflect the last 7 days compared against your rolling 4-week baseline. Volume is calculated from weight × reps.
+              Volume and strength reflect recent completed sessions compared against your rolling baseline. Volume is calculated from weight × reps.
             </p>
 
             {/* ==================================================
