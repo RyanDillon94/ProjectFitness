@@ -290,7 +290,7 @@ export function WeeklyTrendsAnalytics() {
               </div>
             </div>
 
-            {/* ROLLING 4 WEEK ADHERENCE PROGRESS BARS (RESTORED) */}
+            {/* ROLLING 4 WEEK ADHERENCE PROGRESS BARS */}
             <div className="space-y-2.5 rounded-xl border border-border/60 bg-surface-2/20 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Rolling 4 Week Adherence</p>
               <div className="space-y-3 pt-1">
@@ -346,9 +346,9 @@ export function WeeklyTrendsAnalytics() {
 
                   const subStatus = !hasActivity 
                     ? "No recent data" 
-                    : val > 0 
+                    : val >= 1.0 
                       ? "Trending upward" 
-                      : val < 0 
+                      : val <= -1.0 
                         ? "Dipping slightly" 
                         : "Holding steady";
 
