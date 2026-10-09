@@ -323,7 +323,6 @@ export function WeeklyTrendsAnalytics() {
                   const isExpanded = expandedGroup === group;
                   const val = data?.strengthChange || 0;
 
-                  // Descriptive subtitle status
                   const subStatus = !hasActivity 
                     ? "No recent data" 
                     : val > 0 
@@ -341,9 +340,9 @@ export function WeeklyTrendsAnalytics() {
                         }`}
                       >
                         <div className="flex items-center justify-between min-w-0 pr-2">
-                          <div className="min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
                             <p className="text-sm font-semibold text-foreground truncate">{group}</p>
-                            <p className="text-[11px] text-muted-foreground truncate">{subStatus}</p>
+                            <span className="text-[11px] text-muted-foreground truncate font-normal">({subStatus})</span>
                           </div>
                           {hasActivity &&
                             (group === "Legs"
