@@ -157,28 +157,22 @@ export function WeeklyTrendsAnalytics() {
 
   /*
    * ============================================================
-   * ACTIONABLE INSIGHT BANNER LOGIC
+   * THRESHOLD COACH NOTE HELPERS
    * ============================================================
    */
-  const actionableInsight = useMemo(() => {
-    const overall = progress.overallStrengthChange;
-    if (overall >= 1) {
-      return {
-        text: "Overall strength is trending up. Keep locking in your nutrition and training intensity—everything is working.",
-        color: "text-emerald-500",
-      };
-    }
-    if (overall <= -2) {
-      return {
-        text: "Overall strength is dipping. Consider checking your recovery, sleep, or adding an extra working set this week if fatigue is low.",
-        color: "text-rose-500",
-      };
-    }
-    return {
-      text: "Strength is holding steady. Perfect for maintaining muscle mass while cutting—stay the course.",
-      color: "text-primary",
-    };
-  }, [progress]);
+  const getOverallCoachNote = (val: number) => {
+    if (val >= 1.5) return "Overall strength is trending up. Keep locking in your nutrition and training intensity—everything is working.";
+    if (val <= -2.0) return "Overall strength is dipping. Check recovery or sleep, and consider an extra working set if fatigue allows.";
+    return "Strength is holding steady. Ideal for maintaining muscle mass while cutting—stay the course.";
+  };
+
+  const getMuscleCoachNote = (val: number, hasData: boolean) => {
+    if (!hasData) return "No recent training recorded for this baseline window.";
+    if (val >= 1.5) return "Progressing well. Keep current progression scheme.";
+    if (val <= -3.0) return "Noticeable drop in e1RM. Monitor recovery or consider adding an incremental set.";
+    if (val < 0) return "Slight dip within normal recovery variance. Keep monitoring.";
+    return "Holding strong. Optimal retention profile.";
+  };
 
   const renderChangeBadge = (val: number, hasData: boolean) => {
     if (!hasData) {
@@ -336,7 +330,7 @@ export function WeeklyTrendsAnalytics() {
                 <div className="flex items-start gap-2 pt-2 border-t border-border/40 text-xs">
                   <Lightbulb className="size-4 shrink-0 text-primary mt-0.5" />
                   <p className="text-muted-foreground leading-relaxed">
-                    <strong className="text-foreground">Coach Note:</strong> {actionableInsight.text}
+                    <strong className="text-foreground">Coach Note:</strong> {getOverallCoachNote(progress.overallStrengthChange)}
                   </p>
                 </div>
               </div>
@@ -377,10 +371,20 @@ export function WeeklyTrendsAnalytics() {
                           </div>
                         </div>
 
+                        {/* MUSCLE GROUP EXPANDED VIEW (TOP EXERCISES + COACH NOTE) */}
                         {isExpanded && group !== "Legs" && data.topExercises.length > 0 && (
-                          <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top Exercises (4-Week Trend)</p>
-                            {data.topExercises.map((exercise, idx) => renderExerciseTrend(exercise, idx))}
+                          <div className="pb-3 pt-1 px-3 space-y-3 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
+                            <div className="flex items-start gap-2 p-2 rounded-md bg-surface-2/60 border border-border/30 text-xs">
+                              <Lightbulb className="size-3.5 shrink-0 text-primary mt-0.5" />
+                              <p className="text-muted-foreground leading-relaxed">
+                                <strong className="text-foreground">Note:</strong> {getMuscleCoachNote(data.strengthChange, hasActivity && data.baselineVolume > 0)}
+                              </p>
+                            </div>
+
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top Exercises (4-Week Trend)</p>
+                              {data.topExercises.map((exercise, idx) => renderExerciseTrend(exercise, idx))}
+                            </div>
                           </div>
                         )}
 
