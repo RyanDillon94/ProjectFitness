@@ -11,6 +11,8 @@ import {
   BarChart3,
   CheckCircle2,
   Flame,
+  ArrowUpRight,
+  ArrowDownRight,
   ChevronDown,
   ExternalLink,
 } from "lucide-react";
@@ -154,23 +156,33 @@ export function WeeklyTrendsAnalytics() {
 
   /*
    * ============================================================
-   * STATUS TEXT BADGE RENDERER
+   * PERCENTAGE CHANGE BADGE RENDERER
    * ============================================================
    */
-  const renderStatusBadge = (val: number, hasData: boolean) => {
+  const renderChangeBadge = (val: number, hasData: boolean) => {
     if (!hasData) {
       return <span className="text-muted-foreground font-semibold">—</span>;
     }
 
-    if (val >= 1) {
-      return <span className="text-emerald-500 font-semibold">Progressing</span>;
+    if (val > 0) {
+      return (
+        <span className="inline-flex items-center justify-end gap-0.5 text-emerald-500 font-semibold">
+          +{val}%
+          <ArrowUpRight className="size-3.5 shrink-0" />
+        </span>
+      );
     }
 
-    if (val <= -3) {
-      return <span className="text-rose-500 font-semibold">Declining</span>;
+    if (val < 0) {
+      return (
+        <span className="inline-flex items-center justify-end gap-0.5 text-rose-500 font-semibold">
+          {val}%
+          <ArrowDownRight className="size-3.5 shrink-0" />
+        </span>
+      );
     }
 
-    return <span className="text-muted-foreground font-semibold">Holding</span>;
+    return <span className="text-muted-foreground font-semibold">0.0%</span>;
   };
 
   const renderExerciseTrend = (exercise: TopExercise, idx: number) => {
@@ -182,12 +194,12 @@ export function WeeklyTrendsAnalytics() {
     return (
       <div
         key={`${exercise.exerciseName}-${idx}`}
-        className="grid grid-cols-[minmax(0,1fr)_56px_56px] items-center gap-2 text-xs py-1.5 border-t border-border/20 first:border-0"
+        className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 text-xs py-1.5 border-t border-border/20 first:border-0"
       >
         <span className="text-foreground truncate min-w-0">{exercise.exerciseName}</span>
 
         <span
-          className={`w-14 text-right ${
+          className={`w-16 text-right ${
             exercise.isNew
               ? "text-primary font-semibold"
               : e1rmPositive
@@ -201,7 +213,7 @@ export function WeeklyTrendsAnalytics() {
         </span>
 
         <span
-          className={`w-14 text-right ${
+          className={`w-16 text-right ${
             exercise.isNew
               ? "text-primary font-semibold"
               : volumePositive
@@ -311,24 +323,24 @@ export function WeeklyTrendsAnalytics() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
                   <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Strength</p>
-                  <div className="font-display text-base font-bold pt-1">
-                    {renderStatusBadge(progress.overallStrengthChange, true)}
+                  <div className="font-display text-lg font-bold pt-1">
+                    {renderChangeBadge(progress.overallStrengthChange, true)}
                   </div>
                 </div>
 
                 <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
                   <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Volume</p>
-                  <div className="font-display text-base font-bold pt-1">
-                    {renderStatusBadge(progress.overallVolumeChange, true)}
+                  <div className="font-display text-lg font-bold pt-1">
+                    {renderChangeBadge(progress.overallVolumeChange, true)}
                   </div>
                 </div>
               </div>
 
               <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
-                <div className="grid grid-cols-[minmax(0,1fr)_76px_76px] items-center gap-2 pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <div className="grid grid-cols-[minmax(0,1fr)_68px_68px] items-center gap-2 pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   <span>Muscle Groups</span>
-                  <span className="w-[76px] text-right">Strength</span>
-                  <span className="w-[76px] text-right">Volume</span>
+                  <span className="w-[68px] text-right">Strength</span>
+                  <span className="w-[68px] text-right">Volume</span>
                 </div>
 
                 <div className="space-y-3 pt-1">
@@ -341,7 +353,7 @@ export function WeeklyTrendsAnalytics() {
                       <div key={group} className="border-b border-border/40 last:border-0 pb-1">
                         <div
                           onClick={() => handleGroupToggle(group, hasActivity, isExpanded)}
-                          className={`grid grid-cols-[minmax(0,1fr)_76px_76px] items-center gap-2 text-xs py-2 px-2 rounded-lg transition-colors ${
+                          className={`grid grid-cols-[minmax(0,1fr)_68px_68px] items-center gap-2 text-xs py-2 px-2 rounded-lg transition-colors ${
                             hasActivity ? "cursor-pointer hover:bg-surface-2/80" : ""
                           }`}
                         >
@@ -355,12 +367,12 @@ export function WeeklyTrendsAnalytics() {
                               )}
                           </div>
 
-                          <div className="w-[76px] text-right">
-                            {renderStatusBadge(data.strengthChange, hasActivity && data.baselineVolume > 0)}
+                          <div className="w-[68px] text-right">
+                            {renderChangeBadge(data.strengthChange, hasActivity && data.baselineVolume > 0)}
                           </div>
 
-                          <div className="w-[76px] text-right">
-                            {renderStatusBadge(data.volumeChange, hasActivity)}
+                          <div className="w-[68px] text-right">
+                            {renderChangeBadge(data.volumeChange, hasActivity)}
                           </div>
                         </div>
 
@@ -387,7 +399,7 @@ export function WeeklyTrendsAnalytics() {
                                         if (!hasSubActivity || !hasExercises) return;
                                         setExpandedLegSubGroup(isSubExpanded ? null : subGroup);
                                       }}
-                                      className={`grid grid-cols-[minmax(0,1fr)_76px_76px] items-center gap-2 text-xs py-2 px-2 rounded-md transition-colors ${
+                                      className={`grid grid-cols-[minmax(0,1fr)_68px_68px] items-center gap-2 text-xs py-2 px-2 rounded-md transition-colors ${
                                         hasSubActivity && hasExercises ? "cursor-pointer hover:bg-surface-2/80" : "opacity-60"
                                       }`}
                                     >
@@ -400,12 +412,12 @@ export function WeeklyTrendsAnalytics() {
                                         <span className="font-semibold text-foreground truncate">{subGroup}</span>
                                       </div>
 
-                                      <div className="w-[76px] text-right">
-                                        {renderStatusBadge(subData.strengthChange, hasSubActivity && subData.baselineVolume > 0)}
+                                      <div className="w-[68px] text-right">
+                                        {renderChangeBadge(subData.strengthChange, hasSubActivity && subData.baselineVolume > 0)}
                                       </div>
 
-                                      <div className="w-[76px] text-right">
-                                        {renderStatusBadge(subData.volumeChange, hasSubActivity)}
+                                      <div className="w-[68px] text-right">
+                                        {renderChangeBadge(subData.volumeChange, hasSubActivity)}
                                       </div>
                                     </div>
 
@@ -429,7 +441,7 @@ export function WeeklyTrendsAnalytics() {
             </div>
 
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-              Status reflects recent completed sessions compared against your rolling baseline. Volume is calculated from weight × reps.
+              Volume and strength reflect recent completed sessions compared against your rolling baseline. Volume is calculated from weight × reps.
             </p>
 
             <div className="pt-2">
