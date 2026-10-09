@@ -17,28 +17,26 @@ export type WorkoutSet = {
 export type TopExercise = {
   exerciseName: string;
 
-  // Best e1RM achieved during the current 7-day window.
+  // Best e1RM achieved during the current active training window.
   currentE1RM: number;
 
-  // Best e1RM achieved during the previous 28-day baseline.
+  // Best e1RM achieved during the previous baseline window.
   baselineE1RM: number;
 
   // Current e1RM vs baseline e1RM.
   percentChange: number;
 
-  // Current 7-day volume vs average weekly
-  // volume across the previous 4 completed weeks.
+  // Current window volume vs average baseline volume
   volumeChange: number;
 
-  // Actual current 7-day volume.
+  // Actual current window volume.
   currentVolume: number;
 
-  // Total volume across the complete 35-day
-  // trend window, used only to rank top exercises.
+  // Total volume across the complete trend window, used only to rank top exercises.
   trendVolume: number;
 
   // True when the exercise has current activity
-  // but no activity during the previous 28-day baseline.
+  // but no activity during the previous baseline.
   isNew: boolean;
 };
 
@@ -49,8 +47,7 @@ export type LegSubGroupSummary = {
   // Actual volume = weight × reps.
   currentVolume: number;
 
-  // Average weekly volume across the previous
-  // 4 completed weeks.
+  // Baseline volume average.
   baselineVolume: number;
 
   topExercises: TopExercise[];
@@ -60,11 +57,10 @@ export type MuscleGroupSummary = {
   strengthChange: number;
   volumeChange: number;
 
-  // Actual volume during the current 7-day window.
+  // Actual volume during the current window.
   currentVolume: number;
 
-  // Average weekly volume across the previous
-  // 4 completed weeks.
+  // Baseline volume average.
   baselineVolume: number;
 
   topExercises: TopExercise[];
@@ -140,19 +136,6 @@ export function calculateE1RM(
   );
 }
 
-/**
- * Actual training volume.
- *
- * Volume = weight × reps
- *
- * This means:
- *
- * 100kg × 8 × 3 sets = 2,400kg
- * 100kg × 10 × 3 sets = 3,000kg
- *
- * So increased reps are correctly reflected even
- * when the number of sets stays exactly the same.
- */
 function calculateSetVolume(
   weight: number,
   reps: number
@@ -246,20 +229,6 @@ function calculatePercentChange(
   );
 }
 
-/**
- * Calculates volume change using:
- *
- * CURRENT:
- *   Most recent 7 days.
- *
- * BASELINE:
- *   The previous 28 days ONLY.
- *   The current 7-day window is completely excluded.
- *
- * This gives:
- *
- *   Current Week vs Previous 4-Week Average
- */
 function calculateVolumeChange(
   currentVolume: number,
   previousFourWeekVolume: number
@@ -287,19 +256,6 @@ function calculateVolumeChange(
   );
 }
 
-/**
- * Creates the display-ready exercise object.
- *
- * NEW means:
- *
- * - The exercise has current 7-day activity.
- * - The exercise had ZERO volume during the
- *   previous 28-day baseline.
- *
- * The underlying numerical values remain available
- * for calculations, while the UI can display "NEW"
- * instead of "+100%".
- */
 function createTopExercise(
   data: ExerciseProgress
 ): TopExercise {
@@ -313,8 +269,7 @@ function createTopExercise(
     hasCurrentActivity &&
     !hasBaselineActivity;
 
-  let strengthChange =
-    0;
+  let strengthChange = 0;
 
   if (
     data.baseE1rm > 0 &&
@@ -329,24 +284,11 @@ function createTopExercise(
     data.baseE1rm === 0 &&
     data.recentE1rm > 0
   ) {
-    /*
-     * No previous e1RM baseline.
-     *
-     * Keep 100 internally for compatibility.
-     * The UI uses isNew to display NEW.
-     */
     strengthChange = 100;
   } else if (
     data.baseE1rm > 0 &&
     data.recentE1rm === 0
   ) {
-    /*
-     * Exercise was present in the previous
-     * 28-day baseline but has no current
-     * e1RM because it is no longer being used.
-     *
-     * This represents a 100% reduction.
-     */
     strengthChange = -100;
   }
 
@@ -356,18 +298,6 @@ function createTopExercise(
       data.chronicVolume
     );
 
-  /*
-   * Total volume across the entire 35-day
-   * comparison period.
-   *
-   * This is used to determine which exercises
-   * are the "Top Exercises (4-Week Trend)".
-   *
-   * It deliberately includes both:
-   *
-   * - Current 7-day volume
-   * - Previous 28-day volume
-   */
   const trendVolume =
     data.acuteVolume +
     data.chronicVolume;
@@ -408,103 +338,19 @@ function createTopExercise(
 export function calculateTrainingProgress(
   sets: WorkoutSet[]
 ): ProgressReport {
-  const endOfToday =
-    new Date();
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  const now = endOfToday.getTime();
+  const MS_PER_DAY = 86_400_000;
 
-  endOfToday.setHours(
-    23,
-    59,
-    59,
-    999
-  );
+  // Sort sets descending by date to establish session-based windows
+  const sortedSets = [...sets].filter((s) => {
+    if (!s || !s.exerciseName || s.weight <= 0 || s.reps <= 0) return false;
+    const parts = s.date.split("-").map(Number);
+    return parts.length === 3 && !parts.some(Number.isNaN);
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const now =
-    endOfToday.getTime();
-
-  const MS_PER_DAY =
-    86_400_000;
-
-  /*
-   * ============================================================
-   * CURRENT 7 DAYS
-   * ============================================================
-   */
-  const acuteWindowStart =
-    now -
-    7 *
-      MS_PER_DAY;
-
-  /*
-   * ============================================================
-   * PREVIOUS 28 DAYS
-   * ============================================================
-   *
-   * The current 7-day window is deliberately excluded.
-   *
-   * Total analysis window:
-   *
-   * Previous 28 days + Current 7 days = 35 days
-   */
-  const baselineWindowStart =
-    now -
-    35 *
-      MS_PER_DAY;
-
-  const baselineWindowEnd =
-    acuteWindowStart;
-
-  /*
-   * Only valid sets inside the full
-   * 35-day comparison window are considered.
-   */
-  const validSets =
-    sets.filter((s) => {
-      if (
-        !s ||
-        !s.exerciseName ||
-        s.weight <= 0 ||
-        s.reps <= 0
-      ) {
-        return false;
-      }
-
-      const parts =
-        s.date
-          .split("-")
-          .map(Number);
-
-      if (
-        parts.length !== 3 ||
-        parts.some(
-          (part) =>
-            Number.isNaN(part)
-        )
-      ) {
-        return false;
-      }
-
-      const time =
-        new Date(
-          parts[0],
-          parts[1] - 1,
-          parts[2],
-          12,
-          0,
-          0
-        ).getTime();
-
-      return (
-        !Number.isNaN(time) &&
-        time >=
-          baselineWindowStart &&
-        time <= now
-      );
-    });
-
-  if (
-    validSets.length ===
-    0
-  ) {
+  if (sortedSets.length === 0) {
     return {
       overallStrengthChange: 0,
       overallVolumeChange: 0,
@@ -514,20 +360,27 @@ export function calculateTrainingProgress(
     };
   }
 
-  /*
-   * ============================================================
-   * EXERCISE DATA
-   * ============================================================
-   *
-   * Each exercise is tracked independently.
-   *
-   * IMPORTANT:
-   * Only the PRIMARY muscle returned by
-   * getMuscleGroupForExercise is used.
-   *
-   * Secondary muscles do NOT receive any volume
-   * or strength contribution.
-   */
+  // Get unique workout dates to use the last 4 actual training days as the active window
+  const uniqueDates = Array.from(new Set(sortedSets.map(s => s.date)));
+  const recentWorkoutDates = new Set(uniqueDates.slice(0, 4));
+
+  const baselineWindowStart = now - 60 * MS_PER_DAY;
+
+  const validSets = sortedSets.filter((s) => {
+    const time = new Date(s.date).getTime();
+    return !Number.isNaN(time) && time <= now && time >= baselineWindowStart;
+  });
+
+  if (validSets.length === 0) {
+    return {
+      overallStrengthChange: 0,
+      overallVolumeChange: 0,
+      muscleGroups:
+        createEmptyMuscleGroups(),
+      weeklyTrend: [],
+    };
+  }
+
   const exerciseComparison =
     new Map<
       string,
@@ -546,12 +399,6 @@ export function calculateTrainingProgress(
     Legs: 0,
   };
 
-  /*
-   * Previous 4-week volume per muscle.
-   *
-   * This deliberately EXCLUDES the current
-   * 7-day acute window.
-   */
   const chronicVolumePerMuscle: Record<
     MuscleGroup,
     number
@@ -571,43 +418,12 @@ export function calculateTrainingProgress(
           set.exerciseName
         );
 
-      /*
-       * Unknown exercises are ignored rather than
-       * being assigned to an arbitrary muscle.
-       */
       if (!muscle) {
         return;
       }
 
-      const parts =
-        set.date
-          .split("-")
-          .map(Number);
-
-      const time =
-        new Date(
-          parts[0],
-          parts[1] - 1,
-          parts[2],
-          12,
-          0,
-          0
-        ).getTime();
-
-      const isAcute =
-        time >=
-        acuteWindowStart;
-
-      /*
-       * Only dates before the current 7-day
-       * window belong to the previous
-       * four-week baseline.
-       */
-      const isBaseline =
-        time >=
-          baselineWindowStart &&
-        time <
-          baselineWindowEnd;
+      const isAcute = recentWorkoutDates.has(set.date);
+      const isBaseline = !isAcute;
 
       const e1rm =
         calculateE1RM(
@@ -654,68 +470,29 @@ export function calculateTrainingProgress(
           set.exerciseName
         )!;
 
-      /*
-       * CURRENT 7-DAY WINDOW
-       */
       if (isAcute) {
         entry.acuteSets += 1;
+        entry.acuteVolume += setVolume;
+        entry.recentDates.add(set.date);
+        acuteVolumePerMuscle[muscle] += setVolume;
 
-        entry.acuteVolume +=
-          setVolume;
-
-        entry.recentDates.add(
-          set.date
-        );
-
-        acuteVolumePerMuscle[
-          muscle
-        ] += setVolume;
-
-        /*
-         * Best e1RM from the current
-         * 7-day window.
-         */
-        if (
-          e1rm >
-          entry.recentE1rm
-        ) {
-          entry.recentE1rm =
-            e1rm;
+        if (e1rm > entry.recentE1rm) {
+          entry.recentE1rm = e1rm;
         }
       }
 
-      /*
-       * PREVIOUS 4-WEEK BASELINE
-       */
       if (isBaseline) {
         entry.chronicSets += 1;
+        entry.chronicVolume += setVolume;
+        chronicVolumePerMuscle[muscle] += setVolume;
 
-        entry.chronicVolume +=
-          setVolume;
-
-        chronicVolumePerMuscle[
-          muscle
-        ] += setVolume;
-
-        /*
-         * Best e1RM from the previous
-         * 28-day baseline.
-         */
-        if (
-          e1rm >
-          entry.baseE1rm
-        ) {
-          entry.baseE1rm =
-            e1rm;
+        if (e1rm > entry.baseE1rm) {
+          entry.baseE1rm = e1rm;
         }
       }
     }
   );
 
-  /*
-   * Convert raw exercise data into a
-   * clean reusable structure.
-   */
   const exerciseProgress: ExerciseProgress[] =
     Array.from(
       exerciseComparison.values()
@@ -754,11 +531,6 @@ export function calculateTrainingProgress(
       })
     );
 
-  /*
-   * ============================================================
-   * STRENGTH AGGREGATION
-   * ============================================================
-   */
   const muscleStrengthChanges: Record<
     MuscleGroup,
     {
@@ -772,31 +544,26 @@ export function calculateTrainingProgress(
       totalWeight: 0,
       exercises: [],
     },
-
     Back: {
       totalWeightedChange: 0,
       totalWeight: 0,
       exercises: [],
     },
-
     Shoulders: {
       totalWeightedChange: 0,
       totalWeight: 0,
       exercises: [],
     },
-
     Biceps: {
       totalWeightedChange: 0,
       totalWeight: 0,
       exercises: [],
     },
-
     Triceps: {
       totalWeightedChange: 0,
       totalWeight: 0,
       exercises: [],
     },
-
     Legs: {
       totalWeightedChange: 0,
       totalWeight: 0,
@@ -804,34 +571,8 @@ export function calculateTrainingProgress(
     },
   };
 
-  /*
-   * ============================================================
-   * EXERCISE-LEVEL METRICS
-   * ============================================================
-   *
-   * IMPORTANT:
-   *
-   * Every exercise that has appeared during the
-   * complete 35-day analysis window is eligible
-   * for the Top Exercises list.
-   *
-   * There is NO "must be performed twice" rule.
-   *
-   * An exercise performed once qualifies.
-   *
-   * An exercise performed only during the previous
-   * 28 days also qualifies.
-   *
-   * The final list is ranked by total 35-day
-   * volume and limited to 3.
-   */
   exerciseProgress.forEach(
     (data) => {
-      /*
-       * Every exercise gets a display-ready
-       * trend object, including exercises that
-       * are no longer in the current rotation.
-       */
       const exercise =
         createTopExercise(
           data
@@ -843,27 +584,14 @@ export function calculateTrainingProgress(
         exercise
       );
 
-      /*
-       * Only current 7-day activity contributes
-       * to the current muscle-group strength
-       * calculation.
-       */
       if (
         data.acuteVolume <= 0
       ) {
         return;
       }
 
-      let strengthChange =
-        0;
+      let strengthChange = 0;
 
-      /*
-       * Normal case:
-       *
-       * Current 7-day best e1RM
-       * vs
-       * previous 28-day baseline e1RM.
-       */
       if (
         data.baseE1rm > 0 &&
         data.recentE1rm > 0
@@ -874,10 +602,6 @@ export function calculateTrainingProgress(
             data.baseE1rm) *
           100;
 
-        /*
-         * Weight strength aggregation by
-         * actual current exercise volume.
-         */
         muscleStrengthChanges[
           data.muscle
         ].totalWeightedChange +=
@@ -888,29 +612,10 @@ export function calculateTrainingProgress(
           data.muscle
         ].totalWeight +=
           data.acuteVolume;
-      } else if (
-        data.baseE1rm === 0 &&
-        data.recentE1rm > 0
-      ) {
-        /*
-         * New exercise:
-         *
-         * There is no historical strength baseline.
-         *
-         * It remains NEW at exercise level and
-         * is deliberately NOT allowed to distort
-         * the muscle-group weighted strength
-         * calculation.
-         */
       }
     }
   );
 
-  /*
-   * ============================================================
-   * OVERALL VOLUME
-   * ============================================================
-   */
   const totalAcuteVolume =
     Object.values(
       acuteVolumePerMuscle
@@ -935,11 +640,6 @@ export function calculateTrainingProgress(
       totalPreviousFourWeekVolume
     );
 
-  /*
-   * ============================================================
-   * MUSCLE GROUP SUMMARIES
-   * ============================================================
-   */
   const muscleGroupSummaries =
     {} as Record<
       MuscleGroup,
@@ -975,11 +675,6 @@ export function calculateTrainingProgress(
           group
         ];
 
-      /*
-       * Average weekly volume across the
-       * four completed weeks BEFORE the
-       * current week.
-       */
       const baselineVolume =
         previousFourWeekVolume /
         4;
@@ -995,24 +690,6 @@ export function calculateTrainingProgress(
           previousFourWeekVolume
         );
 
-      /*
-       * ========================================================
-       * TOP 3 EXERCISES — FULL 35-DAY TREND
-       * ========================================================
-       *
-       * Unlike the old rule, an exercise does NOT
-       * need to have been performed twice.
-       *
-       * It also does NOT need to have been performed
-       * during the current 7 days.
-       *
-       * Ranking is based on total volume across:
-       *
-       *   Previous 28 days + Current 7 days
-       *
-       * This makes the drill-down genuinely represent
-       * the "4-Week Trend".
-       */
       const topExercises = [
         ...mData.exercises,
       ]
@@ -1028,11 +705,6 @@ export function calculateTrainingProgress(
         )
         .slice(0, 3);
 
-      /*
-       * ========================================================
-       * LEG SUBGROUPS
-       * ========================================================
-       */
       const legSubGroups =
         createEmptyLegSubGroups();
 
@@ -1057,9 +729,6 @@ export function calculateTrainingProgress(
               return;
             }
 
-            /*
-             * Current 7-day volume.
-             */
             const subgroupCurrentVolume =
               subgroupExercises.reduce(
                 (
@@ -1071,11 +740,6 @@ export function calculateTrainingProgress(
                 0
               );
 
-            /*
-             * Previous four-week volume.
-             *
-             * Current week excluded.
-             */
             const subgroupPreviousFourWeekVolume =
               subgroupExercises.reduce(
                 (
@@ -1087,28 +751,16 @@ export function calculateTrainingProgress(
                 0
               );
 
-            /*
-             * Average weekly baseline.
-             */
             const subgroupBaselineVolume =
               subgroupPreviousFourWeekVolume /
               4;
 
-            /*
-             * Subgroup volume change.
-             */
             const subgroupVolumeChange =
               calculateVolumeChange(
                 subgroupCurrentVolume,
                 subgroupPreviousFourWeekVolume
               );
 
-            /*
-             * Strength aggregation for the subgroup.
-             *
-             * Uses actual current exercise volume
-             * as the weighting factor.
-             */
             let subgroupWeightedStrength =
               0;
 
@@ -1117,11 +769,6 @@ export function calculateTrainingProgress(
 
             subgroupExercises.forEach(
               (exercise) => {
-                /*
-                 * Exercises that are not currently
-                 * being performed cannot contribute
-                 * to the current strength calculation.
-                 */
                 if (
                   exercise.acuteVolume <=
                   0
@@ -1145,10 +792,6 @@ export function calculateTrainingProgress(
                     100;
                 }
 
-                /*
-                 * New exercises do not distort the
-                 * subgroup strength average.
-                 */
                 if (
                   exercise.baseE1rm >
                     0 &&
@@ -1175,14 +818,6 @@ export function calculateTrainingProgress(
                   ) / 10
                 : 0;
 
-            /*
-             * ==================================================
-             * TOP 3 LEG SUBGROUP EXERCISES
-             * ==================================================
-             *
-             * Same 35-day trend logic as the main
-             * muscle groups.
-             */
             const subgroupTopExercises =
               subgroupExercises
                 .filter(
@@ -1252,11 +887,6 @@ export function calculateTrainingProgress(
         legSubGroups,
       };
 
-      /*
-       * Preserve existing overall-strength behaviour:
-       *
-       * Biceps and Triceps are excluded.
-       */
       if (
         mData.totalWeight >
           0 &&
