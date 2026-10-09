@@ -269,7 +269,7 @@ export function WeeklyTrendsAnalytics() {
           </DialogHeader>
 
           <div className="space-y-4 pt-1">
-            {/* ADHERENCE SUMMARY */}
+            {/* ADHERENCE SUMMARY CARDS */}
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-xl border border-border/60 bg-surface-2/40 p-3 text-center space-y-1">
                 <p className="stat-label flex items-center justify-center gap-1 text-xs text-muted-foreground">
@@ -287,6 +287,27 @@ export function WeeklyTrendsAnalytics() {
                 <p className="text-xs font-semibold text-foreground pt-0.5">
                   {averageScore >= 80 ? "Top form!" : averageScore >= 50 ? "Push harder" : "Switch on!"}
                 </p>
+              </div>
+            </div>
+
+            {/* ROLLING 4 WEEK ADHERENCE PROGRESS BARS (RESTORED) */}
+            <div className="space-y-2.5 rounded-xl border border-border/60 bg-surface-2/20 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Rolling 4 Week Adherence</p>
+              <div className="space-y-3 pt-1">
+                {trendData.map((week, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between text-xs font-medium">
+                      <span className="text-foreground">{week.weekLabel}</span>
+                      <span className="text-primary font-semibold">{week.score}%</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-border/65">
+                      <div
+                        className="h-full bg-primary transition-all duration-500 rounded-full"
+                        style={{ width: `${week.score}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
