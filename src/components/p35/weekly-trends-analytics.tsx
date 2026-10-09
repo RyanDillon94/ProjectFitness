@@ -78,11 +78,6 @@ export function WeeklyTrendsAnalytics() {
 
   const progress = useMemo(() => calculateTrainingProgress(sets), [sets]);
 
-  /*
-   * ============================================================
-   * ROLLING ADHERENCE FROM LOCKED-IN ARCHIVES
-   * ============================================================
-   */
   const trendData = useMemo(() => {
     if (typeof window === "undefined") return [];
 
@@ -106,11 +101,10 @@ export function WeeklyTrendsAnalytics() {
       }
     }
 
-    // Sort descending by date (most recent first)
+    // Sort descending by date so newest is first at the top
     loadedArchives.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    // Take the last 4 finalized weeks
-    const recent4 = loadedArchives.slice(0, 4).reverse();
+    const recent4 = loadedArchives.slice(0, 4);
 
     return recent4.map((archive) => {
       const endDate = new Date(archive.date);
@@ -268,7 +262,7 @@ export function WeeklyTrendsAnalytics() {
               </div>
             </div>
 
-            {/* ROLLING 4 WEEK ADHERENCE PROGRESS BARS (LOCKED-IN ARCHIVES) */}
+            {/* ROLLING 4 WEEK ADHERENCE PROGRESS BARS (NEWEST AT TOP) */}
             <div className="space-y-2.5 rounded-xl border border-border/60 bg-surface-2/20 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Rolling 4 Week Adherence</p>
               <div className="space-y-3 pt-1">
