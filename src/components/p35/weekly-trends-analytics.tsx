@@ -15,6 +15,7 @@ import {
   ArrowDownRight,
   ChevronDown,
   ExternalLink,
+  Lightbulb,
 } from "lucide-react";
 import { getActiveHabits } from "@/lib/project35";
 import {
@@ -156,9 +157,29 @@ export function WeeklyTrendsAnalytics() {
 
   /*
    * ============================================================
-   * PERCENTAGE CHANGE BADGE RENDERER
+   * ACTIONABLE INSIGHT BANNER LOGIC
    * ============================================================
    */
+  const actionableInsight = useMemo(() => {
+    const overall = progress.overallStrengthChange;
+    if (overall >= 1) {
+      return {
+        text: "Overall strength is trending up. Keep locking in your nutrition and training intensity—everything is working.",
+        color: "text-emerald-500",
+      };
+    }
+    if (overall <= -2) {
+      return {
+        text: "Overall strength is dipping. Consider checking your recovery, sleep, or adding an extra working set this week if fatigue is low.",
+        color: "text-rose-500",
+      };
+    }
+    return {
+      text: "Strength is holding steady. Perfect for maintaining muscle mass while cutting—stay the course.",
+      color: "text-primary",
+    };
+  }, [progress]);
+
   const renderChangeBadge = (val: number, hasData: boolean) => {
     if (!hasData) {
       return <span className="text-muted-foreground font-semibold">—</span>;
@@ -188,18 +209,16 @@ export function WeeklyTrendsAnalytics() {
   const renderExerciseTrend = (exercise: TopExercise, idx: number) => {
     const e1rmPositive = exercise.percentChange > 0;
     const e1rmNegative = exercise.percentChange < 0;
-    const volumePositive = exercise.volumeChange > 0;
-    const volumeNegative = exercise.volumeChange < 0;
 
     return (
       <div
         key={`${exercise.exerciseName}-${idx}`}
-        className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 text-xs py-1.5 border-t border-border/20 first:border-0"
+        className="grid grid-cols-[minmax(0,1fr)_80px] items-center gap-2 text-xs py-1.5 border-t border-border/20 first:border-0"
       >
         <span className="text-foreground truncate min-w-0">{exercise.exerciseName}</span>
 
         <span
-          className={`w-16 text-right ${
+          className={`w-20 text-right ${
             exercise.isNew
               ? "text-primary font-semibold"
               : e1rmPositive
@@ -210,20 +229,6 @@ export function WeeklyTrendsAnalytics() {
           }`}
         >
           {exercise.isNew ? "NEW" : `${exercise.percentChange > 0 ? "+" : ""}${exercise.percentChange}%`}
-        </span>
-
-        <span
-          className={`w-16 text-right ${
-            exercise.isNew
-              ? "text-primary font-semibold"
-              : volumePositive
-                ? "text-emerald-500 font-semibold"
-                : volumeNegative
-                  ? "text-rose-500 font-semibold"
-                  : "text-muted-foreground font-semibold"
-          }`}
-        >
-          {exercise.isNew ? "NEW" : `${exercise.volumeChange > 0 ? "+" : ""}${exercise.volumeChange}%`}
         </span>
       </div>
     );
@@ -276,6 +281,7 @@ export function WeeklyTrendsAnalytics() {
           </DialogHeader>
 
           <div className="space-y-5 pt-2">
+            {/* ADHERENCE SUMMARY */}
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
                 <p className="stat-label flex items-center justify-center gap-1">
@@ -296,6 +302,7 @@ export function WeeklyTrendsAnalytics() {
               </div>
             </div>
 
+            {/* WEEKLY ADHERENCE */}
             <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Rolling 4 Week Adherence</p>
               <div className="space-y-3 pt-1">
@@ -313,34 +320,32 @@ export function WeeklyTrendsAnalytics() {
               </div>
             </div>
 
-            <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-              Adherence is calculated dynamically based on weekday rules and weekly execution protocol targets.
-            </p>
-
+            {/* TRAINING MOMENTUM */}
             <div className="mt-6 pt-5 border-t border-border space-y-4">
               <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">Training Momentum</h3>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Strength</p>
-                  <div className="font-display text-lg font-bold pt-1">
+              {/* OVERALL STRENGTH CARD & INSIGHT BANNER */}
+              <div className="rounded-lg border border-border bg-surface-2/60 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Overall Strength (e1RM)</span>
+                  <div className="font-display text-xl font-bold">
                     {renderChangeBadge(progress.overallStrengthChange, true)}
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-border bg-surface-2/60 p-3.5 text-center space-y-1">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Volume</p>
-                  <div className="font-display text-lg font-bold pt-1">
-                    {renderChangeBadge(progress.overallVolumeChange, true)}
-                  </div>
+                <div className="flex items-start gap-2 pt-2 border-t border-border/40 text-xs">
+                  <Lightbulb className="size-4 shrink-0 text-primary mt-0.5" />
+                  <p className="text-muted-foreground leading-relaxed">
+                    <strong className="text-foreground">Coach Note:</strong> {actionableInsight.text}
+                  </p>
                 </div>
               </div>
 
+              {/* MUSCLE GROUP TABLE */}
               <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
-                <div className="grid grid-cols-[minmax(0,1fr)_68px_68px] items-center gap-2 pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <div className="grid grid-cols-[minmax(0,1fr)_80px] items-center gap-2 pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   <span>Muscle Groups</span>
-                  <span className="w-[68px] text-right">Strength</span>
-                  <span className="w-[68px] text-right">Volume</span>
+                  <span className="w-20 text-right">Strength (e1RM)</span>
                 </div>
 
                 <div className="space-y-3 pt-1">
@@ -353,7 +358,7 @@ export function WeeklyTrendsAnalytics() {
                       <div key={group} className="border-b border-border/40 last:border-0 pb-1">
                         <div
                           onClick={() => handleGroupToggle(group, hasActivity, isExpanded)}
-                          className={`grid grid-cols-[minmax(0,1fr)_68px_68px] items-center gap-2 text-xs py-2 px-2 rounded-lg transition-colors ${
+                          className={`grid grid-cols-[minmax(0,1fr)_80px] items-center gap-2 text-sm py-2 px-2 rounded-lg transition-colors ${
                             hasActivity ? "cursor-pointer hover:bg-surface-2/80" : ""
                           }`}
                         >
@@ -367,12 +372,8 @@ export function WeeklyTrendsAnalytics() {
                               )}
                           </div>
 
-                          <div className="w-[68px] text-right">
+                          <div className="w-20 text-right">
                             {renderChangeBadge(data.strengthChange, hasActivity && data.baselineVolume > 0)}
-                          </div>
-
-                          <div className="w-[68px] text-right">
-                            {renderChangeBadge(data.volumeChange, hasActivity)}
                           </div>
                         </div>
 
@@ -399,7 +400,7 @@ export function WeeklyTrendsAnalytics() {
                                         if (!hasSubActivity || !hasExercises) return;
                                         setExpandedLegSubGroup(isSubExpanded ? null : subGroup);
                                       }}
-                                      className={`grid grid-cols-[minmax(0,1fr)_68px_68px] items-center gap-2 text-xs py-2 px-2 rounded-md transition-colors ${
+                                      className={`grid grid-cols-[minmax(0,1fr)_80px] items-center gap-2 text-xs py-2 px-2 rounded-md transition-colors ${
                                         hasSubActivity && hasExercises ? "cursor-pointer hover:bg-surface-2/80" : "opacity-60"
                                       }`}
                                     >
@@ -412,12 +413,8 @@ export function WeeklyTrendsAnalytics() {
                                         <span className="font-semibold text-foreground truncate">{subGroup}</span>
                                       </div>
 
-                                      <div className="w-[68px] text-right">
+                                      <div className="w-20 text-right">
                                         {renderChangeBadge(subData.strengthChange, hasSubActivity && subData.baselineVolume > 0)}
-                                      </div>
-
-                                      <div className="w-[68px] text-right">
-                                        {renderChangeBadge(subData.volumeChange, hasSubActivity)}
                                       </div>
                                     </div>
 
@@ -441,7 +438,7 @@ export function WeeklyTrendsAnalytics() {
             </div>
 
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-              Volume and strength reflect recent completed sessions compared against your rolling baseline. Volume is calculated from weight × reps.
+              Strength reflects estimated 1RM from recent completed sessions compared against your rolling baseline.
             </p>
 
             <div className="pt-2">
