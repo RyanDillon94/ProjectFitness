@@ -155,11 +155,6 @@ export function WeeklyTrendsAnalytics() {
     return Math.round(validWeeks.reduce((acc, curr) => acc + curr.score, 0) / validWeeks.length);
   }, [trendData]);
 
-  /*
-   * ============================================================
-   * THRESHOLD COACH NOTE HELPERS
-   * ============================================================
-   */
   const getOverallCoachNote = (val: number) => {
     if (val >= 1.5) return "Overall strength is trending up. Keep locking in your nutrition and training intensity—everything is working.";
     if (val <= -2.0) return "Overall strength is dipping. Check recovery or sleep, and consider an extra working set if fatigue allows.";
@@ -181,23 +176,23 @@ export function WeeklyTrendsAnalytics() {
 
     if (val > 0) {
       return (
-        <span className="inline-flex items-center justify-end gap-0.5 text-emerald-500 font-semibold">
+        <span className="inline-flex items-center justify-end gap-0.5 text-emerald-500 font-semibold text-sm">
           +{val}%
-          <ArrowUpRight className="size-3.5 shrink-0" />
+          <ArrowUpRight className="size-4 shrink-0" />
         </span>
       );
     }
 
     if (val < 0) {
       return (
-        <span className="inline-flex items-center justify-end gap-0.5 text-rose-500 font-semibold">
+        <span className="inline-flex items-center justify-end gap-0.5 text-rose-500 font-semibold text-sm">
           {val}%
-          <ArrowDownRight className="size-3.5 shrink-0" />
+          <ArrowDownRight className="size-4 shrink-0" />
         </span>
       );
     }
 
-    return <span className="text-muted-foreground font-semibold">0.0%</span>;
+    return <span className="text-muted-foreground font-semibold text-sm">0.0%</span>;
   };
 
   const renderExerciseTrend = (exercise: TopExercise, idx: number) => {
@@ -207,10 +202,9 @@ export function WeeklyTrendsAnalytics() {
     return (
       <div
         key={`${exercise.exerciseName}-${idx}`}
-        className="grid grid-cols-[minmax(0,1fr)_80px] items-center gap-2 text-xs py-1.5 border-t border-border/20 first:border-0"
+        className="grid grid-cols-[minmax(0,1fr)_80px] items-center gap-2 text-xs py-2 border-t border-border/10 first:border-0"
       >
-        <span className="text-foreground truncate min-w-0">{exercise.exerciseName}</span>
-
+        <span className="text-foreground truncate min-w-0 font-medium">{exercise.exerciseName}</span>
         <span
           className={`w-20 text-right ${
             exercise.isNew
@@ -274,183 +268,175 @@ export function WeeklyTrendsAnalytics() {
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-5 pt-2">
+          <div className="space-y-4 pt-1">
             {/* ADHERENCE SUMMARY */}
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
-                <p className="stat-label flex items-center justify-center gap-1">
+              <div className="rounded-xl border border-border/60 bg-surface-2/40 p-3 text-center space-y-1">
+                <p className="stat-label flex items-center justify-center gap-1 text-xs text-muted-foreground">
                   <CheckCircle2 className="size-3.5 text-primary" />
-                  <span>4-Week Avg Adherence</span>
+                  <span>4-Week Adherence</span>
                 </p>
-                <p className="font-display text-2xl font-bold text-primary">{averageScore}%</p>
+                <p className="font-display text-xl font-bold text-primary">{averageScore}%</p>
               </div>
 
-              <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-center space-y-1">
-                <p className="stat-label flex items-center justify-center gap-1">
+              <div className="rounded-xl border border-border/60 bg-surface-2/40 p-3 text-center space-y-1">
+                <p className="stat-label flex items-center justify-center gap-1 text-xs text-muted-foreground">
                   <Flame className="size-3.5 text-amber-500" />
                   <span>Execution Status</span>
                 </p>
-                <p className="text-sm font-semibold text-foreground pt-1">
-                  {averageScore >= 80 ? "Top form, keep it up!" : averageScore >= 50 ? "Building Momentum, push harder" : "Absolutely shite, switch on!"}
+                <p className="text-xs font-semibold text-foreground pt-0.5">
+                  {averageScore >= 80 ? "Top form!" : averageScore >= 50 ? "Push harder" : "Switch on!"}
                 </p>
               </div>
             </div>
 
-            {/* WEEKLY ADHERENCE */}
-            <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Rolling 4 Week Adherence</p>
-              <div className="space-y-3 pt-1">
-                {trendData.map((week, idx) => (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex justify-between text-xs font-medium">
-                      <span className="text-foreground">{week.weekLabel}</span>
-                      <span className="text-primary font-semibold">{week.score}%</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-border/65">
-                      <div className="h-full bg-primary transition-all duration-500 rounded-full" style={{ width: `${week.score}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* TRAINING MOMENTUM */}
-            <div className="mt-6 pt-5 border-t border-border space-y-4">
-              <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">Training Momentum</h3>
-
-              {/* OVERALL STRENGTH CARD & INSIGHT BANNER */}
-              <div className="rounded-lg border border-border bg-surface-2/60 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Overall Strength (e1RM)</span>
-                  <div className="font-display text-xl font-bold">
-                    {renderChangeBadge(progress.overallStrengthChange, true)}
-                  </div>
+            {/* TRAINING MOMENTUM CONTAINER */}
+            <div className="rounded-xl border border-border/60 bg-surface-2/20 p-4 space-y-4">
+              <div className="flex items-center justify-between border-b border-border/40 pb-3">
+                <div>
+                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Training Momentum</h3>
+                  <p className="text-sm font-bold text-foreground">Overall Strength (e1RM)</p>
                 </div>
-
-                <div className="flex items-start gap-2 pt-2 border-t border-border/40 text-xs">
-                  <Lightbulb className="size-4 shrink-0 text-primary mt-0.5" />
-                  <p className="text-muted-foreground leading-relaxed">
-                    <strong className="text-foreground">Coach Note:</strong> {getOverallCoachNote(progress.overallStrengthChange)}
-                  </p>
+                <div className="font-display text-xl font-bold">
+                  {renderChangeBadge(progress.overallStrengthChange, true)}
                 </div>
               </div>
 
-              {/* MUSCLE GROUP TABLE */}
-              <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-4">
-                <div className="grid grid-cols-[minmax(0,1fr)_80px] items-center gap-2 pb-2 border-b border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {/* COACH NOTE BANNER */}
+              <div className="flex items-start gap-2.5 p-3 rounded-lg bg-surface-2/60 border border-border/40 text-xs">
+                <Lightbulb className="size-4 shrink-0 text-primary mt-0.5" />
+                <p className="text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">Coach Note:</strong> {getOverallCoachNote(progress.overallStrengthChange)}
+                </p>
+              </div>
+
+              {/* MUSCLE GROUPS LIST */}
+              <div className="space-y-1 pt-1">
+                <div className="grid grid-cols-[minmax(0,1fr)_90px] items-center gap-2 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   <span>Muscle Groups</span>
-                  <span className="w-20 text-right">Strength (e1RM)</span>
+                  <span className="w-[90px] text-right">Strength</span>
                 </div>
 
-                <div className="space-y-3 pt-1">
-                  {MUSCLE_GROUPS.map((group) => {
-                    const data = progress.muscleGroups[group];
-                    const hasActivity = data && (data.currentVolume > 0 || data.baselineVolume > 0);
-                    const isExpanded = expandedGroup === group;
+                {MUSCLE_GROUPS.map((group) => {
+                  const data = progress.muscleGroups[group];
+                  const hasActivity = data && (data.currentVolume > 0 || data.baselineVolume > 0);
+                  const isExpanded = expandedGroup === group;
+                  const val = data?.strengthChange || 0;
 
-                    return (
-                      <div key={group} className="border-b border-border/40 last:border-0 pb-1">
-                        <div
-                          onClick={() => handleGroupToggle(group, hasActivity, isExpanded)}
-                          className={`grid grid-cols-[minmax(0,1fr)_80px] items-center gap-2 text-sm py-2 px-2 rounded-lg transition-colors ${
-                            hasActivity ? "cursor-pointer hover:bg-surface-2/80" : ""
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-medium text-foreground truncate">{group}</span>
-                            {hasActivity &&
-                              (group === "Legs"
-                                ? LEG_MUSCLE_GROUPS.some((subGroup) => data.legSubGroups[subGroup].topExercises.length > 0)
-                                : data.topExercises.length > 0) && (
-                                <ChevronDown className={`size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
-                              )}
-                          </div>
+                  // Descriptive subtitle status
+                  const subStatus = !hasActivity 
+                    ? "No recent data" 
+                    : val > 0 
+                      ? "Trending upward" 
+                      : val < 0 
+                        ? "Dipping slightly" 
+                        : "Holding steady";
 
-                          <div className="w-20 text-right">
-                            {renderChangeBadge(data.strengthChange, hasActivity && data.baselineVolume > 0)}
+                  return (
+                    <div key={group} className="border-b border-border/30 last:border-0">
+                      <div
+                        onClick={() => handleGroupToggle(group, hasActivity, isExpanded)}
+                        className={`grid grid-cols-[minmax(0,1fr)_90px] items-center gap-2 py-3 px-2 rounded-lg transition-colors ${
+                          hasActivity ? "cursor-pointer hover:bg-surface-2/60" : "opacity-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between min-w-0 pr-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-foreground truncate">{group}</p>
+                            <p className="text-[11px] text-muted-foreground truncate">{subStatus}</p>
                           </div>
+                          {hasActivity &&
+                            (group === "Legs"
+                              ? LEG_MUSCLE_GROUPS.some((subGroup) => data.legSubGroups[subGroup].topExercises.length > 0)
+                              : data.topExercises.length > 0) && (
+                              <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
+                            )}
                         </div>
 
-                        {/* MUSCLE GROUP EXPANDED VIEW (TOP EXERCISES + COACH NOTE) */}
-                        {isExpanded && group !== "Legs" && data.topExercises.length > 0 && (
-                          <div className="pb-3 pt-1 px-3 space-y-3 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
-                            <div className="flex items-start gap-2 p-2 rounded-md bg-surface-2/60 border border-border/30 text-xs">
-                              <Lightbulb className="size-3.5 shrink-0 text-primary mt-0.5" />
-                              <p className="text-muted-foreground leading-relaxed">
-                                <strong className="text-foreground">Note:</strong> {getMuscleCoachNote(data.strengthChange, hasActivity && data.baselineVolume > 0)}
-                              </p>
-                            </div>
+                        <div className="w-[90px] text-right">
+                          {renderChangeBadge(val, hasActivity && data.baselineVolume > 0)}
+                        </div>
+                      </div>
 
-                            <div className="space-y-1">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top Exercises (4-Week Trend)</p>
-                              {data.topExercises.map((exercise, idx) => renderExerciseTrend(exercise, idx))}
-                            </div>
+                      {/* EXPANDED DRAWER */}
+                      {isExpanded && group !== "Legs" && data.topExercises.length > 0 && (
+                        <div className="pb-3 pt-2 px-3 space-y-3 bg-surface-2/40 rounded-xl mb-2 border border-border/40">
+                          <div className="flex items-start gap-2 p-2 rounded-lg bg-surface-2/60 text-xs">
+                            <Lightbulb className="size-3.5 shrink-0 text-primary mt-0.5" />
+                            <p className="text-muted-foreground leading-relaxed">
+                              {getMuscleCoachNote(data.strengthChange, hasActivity && data.baselineVolume > 0)}
+                            </p>
                           </div>
-                        )}
 
-                        {isExpanded && group === "Legs" && (
-                          <div className="pb-3 pt-1 px-3 space-y-2 bg-surface-2/30 rounded-b-lg border-x border-b border-border/40 mb-2">
-                            <div className="space-y-1">
-                              {LEG_MUSCLE_GROUPS.map((subGroup) => {
-                                const subData = data.legSubGroups[subGroup];
-                                const hasSubActivity = subData && (subData.currentVolume > 0 || subData.baselineVolume > 0);
-                                const hasExercises = subData.topExercises.length > 0;
-                                const isSubExpanded = expandedLegSubGroup === subGroup;
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top Exercises (4-Week Trend)</p>
+                            {data.topExercises.map((exercise, idx) => renderExerciseTrend(exercise, idx))}
+                          </div>
+                        </div>
+                      )}
 
-                                return (
-                                  <div key={subGroup} className="border-b border-border/20 last:border-0">
-                                    <div
-                                      onClick={() => {
-                                        if (!hasSubActivity || !hasExercises) return;
-                                        setExpandedLegSubGroup(isSubExpanded ? null : subGroup);
-                                      }}
-                                      className={`grid grid-cols-[minmax(0,1fr)_80px] items-center gap-2 text-xs py-2 px-2 rounded-md transition-colors ${
-                                        hasSubActivity && hasExercises ? "cursor-pointer hover:bg-surface-2/80" : "opacity-60"
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        {hasSubActivity && hasExercises ? (
-                                          <ChevronDown className={`size-3 shrink-0 text-muted-foreground transition-transform duration-200 ${isSubExpanded ? "rotate-180" : ""}`} />
-                                        ) : (
-                                          <span className="size-3 shrink-0" />
-                                        )}
-                                        <span className="font-semibold text-foreground truncate">{subGroup}</span>
-                                      </div>
+                      {isExpanded && group === "Legs" && (
+                        <div className="pb-3 pt-2 px-3 space-y-2 bg-surface-2/40 rounded-xl mb-2 border border-border/40">
+                          <div className="space-y-1">
+                            {LEG_MUSCLE_GROUPS.map((subGroup) => {
+                              const subData = data.legSubGroups[subGroup];
+                              const hasSubActivity = subData && (subData.currentVolume > 0 || subData.baselineVolume > 0);
+                              const hasExercises = subData.topExercises.length > 0;
+                              const isSubExpanded = expandedLegSubGroup === subGroup;
 
-                                      <div className="w-20 text-right">
-                                        {renderChangeBadge(subData.strengthChange, hasSubActivity && subData.baselineVolume > 0)}
-                                      </div>
+                              return (
+                                <div key={subGroup} className="border-b border-border/10 last:border-0">
+                                  <div
+                                    onClick={() => {
+                                      if (!hasSubActivity || !hasExercises) return;
+                                      setExpandedLegSubGroup(isSubExpanded ? null : subGroup);
+                                    }}
+                                    className={`grid grid-cols-[minmax(0,1fr)_80px] items-center gap-2 text-xs py-2 px-2 rounded-md transition-colors ${
+                                      hasSubActivity && hasExercises ? "cursor-pointer hover:bg-surface-2/60" : "opacity-60"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      {hasSubActivity && hasExercises ? (
+                                        <ChevronDown className={`size-3 shrink-0 text-muted-foreground transition-transform duration-200 ${isSubExpanded ? "rotate-180" : ""}`} />
+                                      ) : (
+                                        <span className="size-3 shrink-0" />
+                                      )}
+                                      <span className="font-semibold text-foreground truncate">{subGroup}</span>
                                     </div>
 
-                                    {isSubExpanded && hasExercises && (
-                                      <div className="ml-4 mr-1 mb-2 px-2.5 py-2 rounded-md bg-surface-2/40 border border-border/30 space-y-1">
-                                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">Top Exercises (4-Week Trend)</p>
-                                        {subData.topExercises.map((exercise, idx) => renderExerciseTrend(exercise, idx))}
-                                      </div>
-                                    )}
+                                    <div className="w-20 text-right">
+                                      {renderChangeBadge(subData.strengthChange, hasSubActivity && subData.baselineVolume > 0)}
+                                    </div>
                                   </div>
-                                );
-                              })}
-                            </div>
+
+                                  {isSubExpanded && hasExercises && (
+                                    <div className="ml-4 mr-1 mb-2 px-2.5 py-2 rounded-md bg-surface-2/60 border border-border/30 space-y-1">
+                                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">Top Exercises (4-Week Trend)</p>
+                                      {subData.topExercises.map((exercise, idx) => renderExerciseTrend(exercise, idx))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+            <p className="text-[11px] text-muted-foreground text-center leading-relaxed pt-1">
               Strength reflects estimated 1RM from recent completed sessions compared against your rolling baseline.
             </p>
 
-            <div className="pt-2">
+            <div className="pt-1">
               <a
                 href="hevy://"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full flex items-center justify-center gap-2 rounded-lg border border-border bg-surface-2/60 hover:bg-surface-2 py-2.5 text-xs font-semibold text-foreground transition-colors"
+                className="w-full flex items-center justify-center gap-2 rounded-xl border border-border/60 bg-surface-2/40 hover:bg-surface-2 py-3 text-xs font-semibold text-foreground transition-colors"
               >
                 <ExternalLink className="size-3.5 text-primary" />
                 Open Hevy App
