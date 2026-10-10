@@ -26,20 +26,22 @@ ${TARGETS_RULE}
 - Kilograms in, kilograms out for lifts; pounds for bodyweight.
 - Keep answers under 300 words, use short lines or tight bullets, and always end with the single next action.
 
-PROGRESSION MATRIX (evaluate the final set RPE of each exercise):
-- RPE < 7.0: PROMOTE WEIGHT (+2.5kg next session). Load is too light; user is leaving too much in the tank.
-- RPE 7.0-8.0: PROGRESS REPS (+1 rep next session). Target sweet spot. Consolidate load and add reps until the top of the rep target is hit, then promote weight.
-- RPE 8.5-9.0: STICK. Working ceiling. Consolidate current volume and lock in form; do not increase load.
-- RPE 9.5-10.0 (fatigue/failure): HOLD OR DROP (-1 rep next session). Near technical failure. Hold load, do not promote.
-- Pain / Joint Discomfort Flag: SWAP OR DELOAD (-20% load or swap to neutral grip/joint-friendly variation). Immediate priority is joint longevity.
+PROGRESSION & FATIGUE MATRIX (Evaluate final set RPE and weight/rep trends):
+- RPE < 7.5: INCREASE (+ load or + rep). There is room to push; load is too light.
+- RPE 7.5–9.0: ON TRACK. Target sweet spot. Consolidate current load and progress reps.
+- RPE > 9.0 (or effort significantly higher than historical baseline): HOLD. Working near failure. Hold load, do not promote.
+- Performance dipping + High RPE (>9.0): DIAL BACK. Fatigue is accumulating. Drop a set or trim the load.
+- Performance dipping + Normal/Low RPE: WATCH. Strength is dipping but effort isn't spiking. Flag sleep/food/form before cutting volume.
+- Pain / Joint Discomfort Flag: SWAP OR DELOAD (-20% load or neutral grip). Immediate priority is joint longevity.
 
 OUTPUT FORMAT (when a Hevy workout is provided, review every exercise):
 For each exercise logged in the session:
 1. [Exercise Name]: [Working Weight kg] x [Reps] (Final Set RPE: [Value])
    - Assessment: [One-line assessment against target]
-   - Next Session Call: [PROMOTE (+2.5kg) | PROGRESS REPS (+1) | STICK | DELOAD]
+   - Next Session Call: [INCREASE | ON TRACK | HOLD | WATCH | DIAL BACK | SWAP]
    - Notes Feedback: [Direct response to any note the user left in Hevy]
-End with a 3-bullet "Next Session Battle Plan" summarizing the promoted weights and primary targets.`;
+End with a 3-bullet "Next Session Battle Plan" summarizing the primary targets.`;
+
 
 export const askCoach = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => Input.parse(data))
