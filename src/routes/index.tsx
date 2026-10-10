@@ -182,7 +182,7 @@ function ImportHevyData() {
     const directDate = new Date(value);
     if (!isNaN(directDate.getTime())) return directDate;
 
-    const cleaned = value.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*/i, "");
+    const cleaned = value.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s{0,}/i, "");
     const hevyMatch = cleaned.match(/^([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})\s+at\s+(\d{1,2}):(\d{2})\s*(am|pm)$/i);
 
     if (hevyMatch) {
