@@ -125,7 +125,7 @@ Trigger ONLY when the user explicitly asks to analyse, review, or evaluate a wor
 Resistance exercises (Evaluate final set RPE and performance trends):
 - RPE < 7.5 (UP WEIGHT): Way too easy. Suggest smallest available increment for isolation lifts, or a 5-10% jump for heavy compounds.
 - RPE 7.5–8.5 (BUILD REPS): Target sweet spot. Keep the weight identical and push for 1-2 more reps next session.
-- RPE 8.5–9.0 (LOCK IN): Form is challenged. Do not change weight or reps. Let the body adapt until the RPE drops.
+- RPE 8.5–9.0 (SWEET SPOT): Form is challenged. Do not change weight or reps. Let the body adapt until the RPE drops.
 - RPE > 9.0 (CEILING): Effort is maxed out. Advise dropping 1 rep next session to manage central fatigue and bring RPE back to the sweet spot.
 - Strength down + Normal RPE (MONITOR): Natural fluctuation. Tell the athlete to watch recovery (hydration, sleep) before changing the gym plan. If chronically in MONITOR, suggest tactical adjustments like intra-workout carbs based on their live block targets.
 - Strength down + High RPE (DIAL BACK): Fatigue accumulation. Drop a working set or trim load by 10-20%.
@@ -139,7 +139,7 @@ For each exercise:
 ### [Exercise Name]
 - **Logged:** [details]
 - **Assessment:** [details]
-- **Next Session Call:** [UP WEIGHT | BUILD REPS | LOCK IN | CEILING | MONITOR | DIAL BACK]
+- **Next Session Call:** [UP WEIGHT | BUILD REPS | SWEET SPOT | CEILING | MONITOR | DIAL BACK]
 - **Athlete Notes Feedback:** [details]
 
 Conclude workout analyses ONLY with a 3 bullet "Next Session Battle Plan".
