@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { DashboardHeader } from "@/components/p35/header";
 import { NonNegotiables } from "@/components/p35/non-negotiables";
 import { WeeklyProtocolCard } from "@/components/p35/WeeklyProtocolCard";
@@ -19,11 +19,11 @@ import { getPlanBlueprint, needsOnboarding, seedPlanIfMissing } from "@/lib/plan
 import { Onboarding } from "@/components/p35/Onboarding";
 import { APP_HEADLINE } from "@/lib/config";
 import { TestModePanel } from '../components/TestModePanel';
+import { Button } from "@/components/ui/button";
+import { Upload } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => {
-    // Metadata is rendered before the client plan is readable, so it comes from
-    // the tenant blueprint rather than the live engine state.
     const blueprint = getPlanBlueprint();
     const title = APP_HEADLINE;
     const description = blueprint.tagline;
@@ -48,15 +48,11 @@ function Index() {
   const [needsSetup, setNeedsSetup] = useState(false);
 
   useEffect(() => {
-    // Project 35 seeds its blueprint into the shared engine state and skips
-    // onboarding; Ascension is routed into the wizard until it has a plan.
     seedPlanIfMissing();
     setIsMounted(true);
     setNeedsSetup(needsOnboarding());
   }, []);
 
-  // Decide what to render only once the client has mounted, so the server and
-  // client markup cannot disagree.
   if (!isMounted) return null;
 
   if (needsSetup) {
@@ -71,7 +67,6 @@ function Dashboard({ userId }: { userId: string }) {
   const { hevyApiKey, workout, update } = useUserSettings(userId);
   const [isFinalised, setIsFinalised] = useState(false);
   
-  // Track the currently viewed date from local storage/navigator
   const [currentDate, setCurrentDate] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("p35_active_date") || todayKey();
@@ -79,18 +74,12 @@ function Dashboard({ userId }: { userId: string }) {
     return todayKey();
   });
 
-  // 1. Boot Sequence & Aggressive Thaw Checker
   useEffect(() => {
-    // 1. On first mount, snap to today
     const appBootDay = todayKey();
     localStorage.setItem("p35_active_date", appBootDay);
     setCurrentDate(appBootDay);
     window.dispatchEvent(new Event("p35-date-changed"));
 
-    // 2. The "Thaw" Handler
-    // If you swipe the app closed, the phone often just freezes the webview.
-    // When you open it the next morning, it unfreezes. This instantly catches 
-    // the unfreeze event and forces a reload to today if a new day has started.
     const handleWakeUp = () => {
       if (document.visibilityState === "visible") {
         if (todayKey() !== appBootDay) {
@@ -100,11 +89,9 @@ function Dashboard({ userId }: { userId: string }) {
       }
     };
 
-    // Listen for the app coming back to the foreground
     document.addEventListener("visibilitychange", handleWakeUp);
     window.addEventListener("focus", handleWakeUp);
 
-    // 3. Fallback interval for midnight rollovers if the screen is actively on
     const checkMidnight = setInterval(() => {
       if (todayKey() !== appBootDay) {
         localStorage.setItem("p35_active_date", todayKey());
@@ -119,7 +106,6 @@ function Dashboard({ userId }: { userId: string }) {
     };
   }, []);
 
-  // 2. Existing Hook: State and event tracking for date/finalise changes
   useEffect(() => {
     const updateDateAndStatus = () => {
       const active = localStorage.getItem("p35_active_date") || todayKey();
@@ -148,13 +134,11 @@ function Dashboard({ userId }: { userId: string }) {
   return (
     <main className="mx-auto w-full max-w-xl space-y-4 overflow-x-hidden px-4 pt-5 pb-28">
 
-      {/* Top Banner (Only if NOT finalised) */}
       {!isFinalised && <FinaliseWeekBanner userId={userId} key={`top-${currentDate}`} />}
 
       <DashboardHeader />
       <NonNegotiables userId={userId} />
       
-      {/* Pass the active navigated date down to the protocol card */}
       <WeeklyProtocolCard currentDate={currentDate} />
 
       <HevyCard
@@ -176,18 +160,19 @@ function Dashboard({ userId }: { userId: string }) {
         <WeeklyTrendsAnalytics/>
         <MissionArchiveCard />
         <DataBackupCard />
+        <ImportHevyData />
       </div>
 
-      {/* Bottom Banner (Only AFTER finalised) */}
       {isFinalised && <FinaliseWeekBanner userId={userId} key={`bot-${currentDate}`} />}
 
       <CoachDrawer workout={workout} entries={entries} userId={userId} />
+      {/* <TestModePanel /> */}
 
+    </main>
+  );
+}
 
-import { useRef } from "react";
-import { Button } from "@/components/ui/button";
-import { Upload } from "lucide-react";
-
+// Separate component function at the bottom level of the file
 export function ImportHevyData() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -199,13 +184,9 @@ export function ImportHevyData() {
     reader.onload = (e) => {
       try {
         const result = e.target?.result as string;
-        // Verify it parses as JSON before saving
         JSON.parse(result); 
         
-        // Save to the exact key the analytics component looks for
         localStorage.setItem("p35_hevy_workouts", result);
-        
-        // Dispatch event to force React components to re-render if needed
         window.dispatchEvent(new Event("storage")); 
         alert("Hevy history imported successfully!");
         
@@ -214,7 +195,6 @@ export function ImportHevyData() {
         alert("Invalid file format. Please upload a valid Hevy JSON export.");
       }
       
-      // Reset input so the same file can be uploaded again if needed
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -223,7 +203,7 @@ export function ImportHevyData() {
   };
 
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-4 w-full">
       <input
         type="file"
         accept=".json"
@@ -234,18 +214,11 @@ export function ImportHevyData() {
       <Button 
         variant="secondary" 
         onClick={() => fileInputRef.current?.click()}
-        className="gap-2"
+        className="gap-2 w-full"
       >
         <Upload className="size-4" />
         Import Hevy JSON
       </Button>
     </div>
-  );
-}
-
-      
-   {/*   <TestModePanel /> */}
-
-    </main>
   );
 }
