@@ -28,7 +28,6 @@ export type MuscleStatus =
   | "DIAL BACK"
   | "NO DATA";
 
-
 export type SignalConfidence = "high" | "medium" | "low";
 
 export type MuscleSignal = {
@@ -83,6 +82,8 @@ const MS_PER_DAY = 86_400_000;
 
 /** Rolling window of history that is considered at all. */
 const WINDOW_DAYS = 60;
+/** Maximum days since last performance for an exercise to count as "recent/active". */
+const MAX_RECENT_SESSION_AGE_DAYS = 14;
 /** "Recent" = the last N sessions that included the muscle group. */
 const RECENT_SESSIONS_PER_MUSCLE = 2;
 
@@ -298,12 +299,11 @@ function buildSignal(input: SignalInput): MuscleSignal {
     return makeSignal({ ...base, status: "BUILD REPS", reason: `Strength ${pct}. Hitting the sweet spot. Keep the load and push for 1-2 more reps.` });
   }
   if (rpe >= 8.5 && rpe <= 9.0) {
-  return makeSignal({ ...base, status: "SWEET SPOT", reason: `Strength ${pct}. Form is challenged. Hold it in the sweet spot until it feels easier.` });
-}
+    return makeSignal({ ...base, status: "SWEET SPOT", reason: `Strength ${pct}. Form is challenged. Hold it in the sweet spot until it feels easier.` });
+  }
   // rpe > 9.0
   return makeSignal({ ...base, status: "CEILING", reason: `Strength ${pct} but effort is maxed (RPE ${rpe.toFixed(1)}). Drop a rep next session to manage fatigue.` });
 }
-
 
 // ---------------------------------------------------------------------------
 // Main calculation
@@ -313,10 +313,10 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
   const now = endOfToday.getTime();
+  const todayStr = endOfToday.toISOString().slice(0, 10);
   const windowStart = now - WINDOW_DAYS * MS_PER_DAY;
 
   // 1. Group valid sets by exercise and session (date), inside the rolling window.
-  //    Sets are read in the order given, so the last set with an RPE wins.
   const history = new Map<string, ExerciseHistory>();
   const datesByMuscle = new Map<MuscleGroup, Set<string>>();
 
@@ -380,12 +380,21 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   const exerciseProgress: ExerciseProgress[] = [];
 
   history.forEach((exercise) => {
-    // Determine "recent" vs "baseline" based on THIS exercise's own timeline
     const exDates = Array.from(exercise.sessions.keys()).sort().reverse();
+    if (exDates.length === 0) return;
+
+    // Freshness guard: if the exercise hasn't been performed in the last MAX_RECENT_SESSION_AGE_DAYS,
+    // do not count it as active/recent training momentum (prevents ghost exercises from months ago popping up).
+    const latestDate = exDates[0];
+    const daysSinceLast = daysBetween(todayStr, latestDate);
+    const isStale = daysSinceLast > MAX_RECENT_SESSION_AGE_DAYS;
+
     const recentCount = exDates.length > RECENT_SESSIONS_PER_MUSCLE
       ? RECENT_SESSIONS_PER_MUSCLE
       : Math.max(1, exDates.length - 1);
-    const recentExDates = new Set(exDates.slice(0, recentCount));
+    
+    // If stale, don't assign any recent execution dates for this specific exercise
+    const recentExDates = new Set(isStale ? [] : exDates.slice(0, recentCount));
 
     const recentEntries: SessionEntry[] = [];
     const baselineEntries: SessionEntry[] = [];
@@ -396,6 +405,8 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
 
     const acuteVolume = recentEntries.reduce((sum, e) => sum + e.volume, 0);
     const chronicVolume = baselineEntries.reduce((sum, e) => sum + e.volume, 0);
+    
+    // Only add to acute volume if not stale
     acuteVolumePerMuscle[exercise.muscle] += acuteVolume;
     chronicVolumePerMuscle[exercise.muscle] += chronicVolume;
 
@@ -428,7 +439,6 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   });
 
   exerciseProgress.forEach((data) => {
-    // Skip exercises with no recent volume before adding them to the list
     if (data.acuteVolume <= 0) return;
 
     const exercise = createTopExercise(data);
