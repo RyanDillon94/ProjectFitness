@@ -160,7 +160,6 @@ function Dashboard({ userId }: { userId: string }) {
         <WeeklyTrendsAnalytics/>
         <MissionArchiveCard />
         <DataBackupCard />
-        <ImportHevyData />
       </div>
 
       {isFinalised && <FinaliseWeekBanner userId={userId} key={`bot-${currentDate}`} />}
@@ -171,8 +170,9 @@ function Dashboard({ userId }: { userId: string }) {
     </main>
   );
 }
-{/*
-export function ImportHevyData() {
+
+/*
+function ImportHevyData() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseWorkoutDate = (rawDate: string): Date | null => {
@@ -412,4 +412,4 @@ export function ImportHevyData() {
     </div>
   );
 }
-*/}
+*/
