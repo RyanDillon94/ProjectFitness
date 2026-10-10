@@ -339,7 +339,6 @@ export function WeeklyTrendsAnalytics() {
                   const isExpanded = expandedGroup === group;
                   const val = data?.strengthChange || 0;
 
-                  const signal = data?.signal;
                   const subStatus = !hasActivity ? "No recent data" : "Building baseline";
 
                   return (
@@ -347,7 +346,7 @@ export function WeeklyTrendsAnalytics() {
                       <div
                         onClick={() => handleGroupToggle(group, hasActivity, isExpanded)}
                         className={`grid grid-cols-[minmax(0,1fr)_90px] items-center gap-2 py-3 px-2 rounded-lg transition-colors ${
-                          hasActivity ? "cursor-pointer hover:bg-surface-2/60" : "opacity-50"
+                          hasActivity ? "cursor-pointer hover:border-border/50" : "opacity-50"
                         }`}
                       >
                         <div className="flex items-center justify-between min-w-0 pr-2">
@@ -370,28 +369,11 @@ export function WeeklyTrendsAnalytics() {
                         </div>
                       </div>
 
-                                           {/* EXPANDED DRAWER */}
+                      {/* EXPANDED DRAWER */}
                       {isExpanded && group !== "Legs" && data.topExercises.length > 0 && (
-                        <div className="pb-3 pt-2 px-3 space-y-3 bg-surface-2/40 rounded-xl mb-2 border border-border/40">
-                          <div className="flex items-start gap-2 p-2 rounded-lg bg-surface-2/60 text-xs">
-                            <Lightbulb className="size-3.5 shrink-0 text-primary mt-0.5" />
-                            <p className="text-muted-foreground leading-relaxed">
-                              <strong className="text-foreground">Analysis:</strong> {
-                                (() => {
-                                  const topEx = [...data.topExercises].sort((a, b) => b.percentChange - a.percentChange)[0];
-                                  const bestMove = topEx && topEx.percentChange > 0 ? ` Driven primarily by ${topEx.exerciseName} (+${topEx.percentChange}%).` : "";
-                                  
-                                  if (val >= 3.0) return `Strong adaptation across ${group.toLowerCase()}.${bestMove} Load is moving well—keep consolidating or look to step up weights next session.`;
-                                  if (val <= -2.0) return `Fatigue or recovery drag detected in ${group.toLowerCase()}. Inspect recent RPE spikes or sleep metrics before making volume cuts.`;
-                                  return `Holding steady in ${group.toLowerCase()}.${bestMove} Productive baseline maintenance while cutting—keep the rep targets disciplined.`;
-                                })()
-                              }
-                            </p>
-                          </div>
-
-
+                        <div className="pb-3 pt-2 px-3 space-y-2 bg-surface-2/40 rounded-xl mb-2 border border-border/40">
                           <div className="space-y-1">
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top Exercises (Last 2 Sessions vs Baseline)</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">Top Exercises (Last 2 Sessions vs Baseline)</p>
                             {data.topExercises.map((exercise, idx) => renderExerciseTrend(exercise, idx))}
                           </div>
                         </div>
@@ -399,12 +381,6 @@ export function WeeklyTrendsAnalytics() {
 
                       {isExpanded && group === "Legs" && (
                         <div className="pb-3 pt-2 px-3 space-y-2 bg-surface-2/40 rounded-xl mb-2 border border-border/40">
-                          <div className="flex items-start gap-2 p-2 rounded-lg bg-surface-2/60 text-xs">
-                            <Lightbulb className="size-3.5 shrink-0 text-primary mt-0.5" />
-                            <p className="text-muted-foreground leading-relaxed">
-                              {signal?.reason ?? "Not enough history yet."}
-                            </p>
-                          </div>
                           <div className="space-y-1">
                             {LEG_MUSCLE_GROUPS.map((subGroup) => {
                               const subData = data.legSubGroups[subGroup];
