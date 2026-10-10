@@ -139,8 +139,9 @@ For each exercise:
 ### [Exercise Name]
 - **Logged:** [details]
 - **Assessment:** [details]
-- **Next Session Call:** [UP WEIGHT | BUILD REPS | SWEET SPOT | CEILING | MONITOR | DIAL BACK]
+- **Next Session Call:** [STATUS TAG] - [Specific actionable instruction based on the matrix, e.g., "Add 2.5kg", "Push for +1 rep", "Drop 1 rep", etc.]
 - **Athlete Notes Feedback:** [details]
+
 
 Conclude workout analyses ONLY with a 3 bullet "Next Session Battle Plan".
 
