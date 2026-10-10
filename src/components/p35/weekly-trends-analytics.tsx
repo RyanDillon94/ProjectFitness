@@ -332,11 +332,6 @@ export function WeeklyTrendsAnalytics() {
                   <span>Muscle Groups</span>
                   <span className="w-[90px] text-right">Strength</span>
                 </div>
-                {historyInfo && (
-                  <p className="pb-2 text-[11px] text-muted-foreground">
-                    Based on {historyInfo.sessions} logged sessions since {historyInfo.since}
-                  </p>
-                )}
 
                 {MUSCLE_GROUPS.map((group) => {
                   const data = progress.muscleGroups[group];
@@ -375,15 +370,25 @@ export function WeeklyTrendsAnalytics() {
                         </div>
                       </div>
 
-                      {/* EXPANDED DRAWER */}
+                                           {/* EXPANDED DRAWER */}
                       {isExpanded && group !== "Legs" && data.topExercises.length > 0 && (
                         <div className="pb-3 pt-2 px-3 space-y-3 bg-surface-2/40 rounded-xl mb-2 border border-border/40">
                           <div className="flex items-start gap-2 p-2 rounded-lg bg-surface-2/60 text-xs">
                             <Lightbulb className="size-3.5 shrink-0 text-primary mt-0.5" />
                             <p className="text-muted-foreground leading-relaxed">
-                              {signal?.reason ?? "Not enough history yet."}
+                              <strong className="text-foreground">Analysis:</strong> {
+                                (() => {
+                                  const topEx = [...data.topExercises].sort((a, b) => b.percentChange - a.percentChange)[0];
+                                  const bestMove = topEx && topEx.percentChange > 0 ? ` Driven primarily by ${topEx.exerciseName} (+${topEx.percentChange}%).` : "";
+                                  
+                                  if (val >= 3.0) return `Strong adaptation across ${group.toLowerCase()}.${bestMove} Load is moving well—keep consolidating or look to step up weights next session.`;
+                                  if (val <= -2.0) return `Fatigue or recovery drag detected in ${group.toLowerCase()}. Inspect recent RPE spikes or sleep metrics before making volume cuts.`;
+                                  return `Holding steady in ${group.toLowerCase()}.${bestMove} Productive baseline maintenance while cutting—keep the rep targets disciplined.`;
+                                })()
+                              }
                             </p>
                           </div>
+
 
                           <div className="space-y-1">
                             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top Exercises (Last 2 Sessions vs Baseline)</p>
@@ -451,7 +456,7 @@ export function WeeklyTrendsAnalytics() {
             </div>
 
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed pt-1">
-              Strength reflects estimated 1RM from recent completed sessions compared against your rolling baseline.
+              Strength reflects estimated 1RM from recent completed sessions compared against your rolling 60 day baseline.
             </p>
 
             <div className="pt-1">
