@@ -81,6 +81,16 @@ export function WeeklyTrendsAnalytics() {
 
   const progress = useMemo(() => calculateTrainingProgress(sets), [sets]);
 
+  const historyInfo = useMemo(() => {
+    const dates = Array.from(new Set(sets.map((s) => s.date))).sort();
+    if (dates.length === 0) return null;
+    const earliest = new Date(dates[0]);
+    const label = Number.isNaN(earliest.getTime())
+      ? dates[0]
+      : earliest.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    return { sessions: dates.length, since: label };
+  }, [sets]);
+
   const trendData = useMemo(() => {
     if (typeof window === "undefined") return [];
 
@@ -325,6 +335,11 @@ export function WeeklyTrendsAnalytics() {
                   <span>Muscle Groups</span>
                   <span className="w-[90px] text-right">Strength</span>
                 </div>
+                {historyInfo && (
+                  <p className="pb-2 text-[11px] text-muted-foreground">
+                    Based on {historyInfo.sessions} logged sessions since {historyInfo.since}
+                  </p>
+                )}
 
                 {MUSCLE_GROUPS.map((group) => {
                   const data = progress.muscleGroups[group];
