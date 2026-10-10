@@ -171,7 +171,7 @@ function Dashboard({ userId }: { userId: string }) {
     </main>
   );
 }
-
+{/*
 export function ImportHevyData() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -412,3 +412,4 @@ export function ImportHevyData() {
     </div>
   );
 }
+*/}
