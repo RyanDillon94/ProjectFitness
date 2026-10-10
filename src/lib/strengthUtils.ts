@@ -468,7 +468,12 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   datesByMuscle.forEach((dates, muscle) => {
     const sorted = Array.from(dates).sort().reverse(); // YYYY-MM-DD sorts correctly as text
     allDatesByMuscle.set(muscle, sorted);
-    recentDatesByMuscle.set(muscle, sorted.slice(0, RECENT_SESSIONS_PER_MUSCLE));
+    // Normally the last N sessions are "recent" and everything older is baseline.
+    // With very little history (e.g. only 2 sessions), use the latest session as
+    // "recent" so there is still something older to compare it against.
+    const recentCount =
+      sorted.length > RECENT_SESSIONS_PER_MUSCLE ? RECENT_SESSIONS_PER_MUSCLE : Math.max(1, sorted.length - 1);
+    recentDatesByMuscle.set(muscle, sorted.slice(0, recentCount));
   });
 
   // 3. Per exercise: recent vs baseline top-set e1RM (averaged), volume and RPE.
