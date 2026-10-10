@@ -20,12 +20,14 @@ export type WorkoutSet = {
 };
 
 export type MuscleStatus =
-  | "INCREASE"
-  | "HOLD"
-  | "ON TRACK"
-  | "WATCH"
+  | "UP WEIGHT"
+  | "BUILD REPS"
+  | "LOCK IN"
+  | "CEILING"
+  | "MONITOR"
   | "DIAL BACK"
   | "NO DATA";
+
 
 export type SignalConfidence = "high" | "medium" | "low";
 
@@ -258,152 +260,51 @@ function buildSignal(input: SignalInput): MuscleSignal {
   const recentSessions = recentDates.length;
 
   if (recentSessions === 0) {
-    return makeSignal({
-      status: "NO DATA",
-      reason: `No sessions logged in the last ${WINDOW_DAYS} days.`,
-    });
+    return makeSignal({ status: "NO DATA", reason: `No sessions logged in the last ${WINDOW_DAYS} days.` });
   }
 
   if (!comparable) {
-    return makeSignal({
-      status: "NO DATA",
-      reason: "Not enough history yet. It needs an older session to compare against.",
-      recentSessions,
-      recentRpe,
-      rpeChange,
-    });
+    return makeSignal({ status: "NO DATA", reason: "Not enough history yet. It needs an older session to compare against.", recentSessions, recentRpe, rpeChange });
   }
 
   const pct = fmtPct(strengthChange);
-  const isUp = strengthChange >= STRENGTH_UP_PCT;
   const isDown = strengthChange <= STRENGTH_DOWN_PCT;
-
   const rpeUsable = recentRpe !== null && rpeCoverage >= MIN_RPE_COVERAGE;
-  const harder =
-    rpeUsable && (rpeChange !== null ? rpeChange >= RPE_HARDER_DELTA : (recentRpe as number) >= RPE_NEAR_FAILURE);
-  const lowEffort = rpeUsable && !harder && (recentRpe as number) < RPE_LOW;
+  const base = { recentSessions, recentRpe, rpeChange, confidence: (recentSessions < 2 ? "low" : "medium") as SignalConfidence };
 
-  const harderText =
-    rpeChange !== null
-      ? `RPE up ${rpeChange.toFixed(1)}`
-      : recentRpe !== null
-        ? `RPE near ${recentRpe.toFixed(1)}`
-        : "";
-
-  const base = { recentSessions, recentRpe, rpeChange };
-
-  // Strength-only call: RPE missing or too sparse to trust.
+  // Fallback if no RPE is logged
   if (!rpeUsable) {
-    const confidence: SignalConfidence = recentSessions < 2 ? "low" : "medium";
-    if (isDown) {
-      return makeSignal({
-        ...base,
-        status: "WATCH",
-        confidence,
-        reason: `Strength ${pct}. Log RPE on your last set so fatigue can be told apart from lighter loads.`,
-      });
-    }
-    return makeSignal({
-      ...base,
-      status: "ON TRACK",
-      confidence,
-      reason: isUp
-        ? `Strength ${pct}. Log RPE on your last set to get a load call.`
-        : `Strength holding (${pct}). Log RPE on your last set to get a load call.`,
-    });
+    if (isDown) return makeSignal({ ...base, status: "MONITOR", reason: `Strength ${pct}. Log RPE so fatigue can be separated from lighter loads.` });
+    return makeSignal({ ...base, status: "BUILD REPS", reason: `Strength ${pct}. Log RPE on your last set to get an exact load call.` });
   }
 
-  const confidence: SignalConfidence =
-    recentSessions < 2 ? "low" : rpeChange !== null ? "high" : "medium";
+  base.confidence = "high";
+  const rpe = recentRpe as number;
 
+  // FATIGUE / STRENGTH DROP
   if (isDown) {
-    if (!harder) {
-      return makeSignal({
-        ...base,
-        status: "WATCH",
-        confidence,
-        reason: `Strength ${pct} but ${
-          rpeChange !== null && rpeChange > 0 ? `effort is only up ${rpeChange.toFixed(1)}` : "effort isn't higher"
-        }, so this is more likely lighter loads than fatigue. Check sleep, food and form before cutting volume.`,
-      });
+    const isHarder = rpe >= 9.0 || (rpeChange !== null && rpeChange >= RPE_HARDER_DELTA);
+    if (isHarder) {
+      return makeSignal({ ...base, status: "DIAL BACK", reason: `Strength ${pct} and fatigue is accumulating (RPE ${rpe.toFixed(1)}). Drop a working set or trim the load.` });
     }
-
-    const bothSessionsDown =
-      recentSessions === 2 &&
-      sessionChanges.length === 2 &&
-      sessionChanges.every((c) => c !== null && c <= SESSION_DOWN_PCT);
-
-    if (!bothSessionsDown) {
-      return makeSignal({
-        ...base,
-        status: "WATCH",
-        confidence,
-        reason:
-          recentSessions < 2
-            ? `Strength ${pct} with ${harderText}, but there is only one recent session. One more will confirm it.`
-            : `Strength ${pct} with ${harderText}, but only one of the last two sessions shows it. One more will confirm it.`,
-      });
-    }
-
-    const gapDays = allDates.length >= 2 ? daysBetween(allDates[0], allDates[1]) : 0;
-    if (gapDays >= FIRST_SESSION_BACK_GAP_DAYS) {
-      return makeSignal({
-        ...base,
-        status: "WATCH",
-        confidence,
-        reason: `First session back after ${gapDays} days, so a dip is expected (${pct}, ${harderText}). Re-check after the next one.`,
-      });
-    }
-
-    return makeSignal({
-      ...base,
-      status: "DIAL BACK",
-      confidence,
-      reason: `Strength ${pct} across both recent sessions with ${harderText}. Drop a set or trim the load for a week.`,
-    });
+    return makeSignal({ ...base, status: "MONITOR", reason: `Strength ${pct} but effort isn't spiking (RPE ${rpe.toFixed(1)}). Watch recovery before changing the plan.` });
   }
 
-  if (isUp) {
-    if (harder) {
-      return makeSignal({
-        ...base,
-        status: "HOLD",
-        confidence,
-        reason: `Strength ${pct} but ${harderText}. It's costing more, so hold the load.`,
-      });
-    }
-    return makeSignal({
-      ...base,
-      status: "INCREASE",
-      confidence,
-      reason: `Strength ${pct} at the same or lower effort. Add load or a rep next session.`,
-    });
+  // PROGRESSION / HOLDING / INCREASING
+  if (rpe < 7.5) {
+    return makeSignal({ ...base, status: "UP WEIGHT", reason: `Strength ${pct}. Effort is too low (RPE ${rpe.toFixed(1)}). Up the weight next session.` });
   }
-
-  // Holding steady
-  if (harder) {
-    return makeSignal({
-      ...base,
-      status: "WATCH",
-      confidence,
-      reason: `Strength holding (${pct}) but ${harderText}. Hold the load and watch recovery.`,
-    });
+  if (rpe >= 7.5 && rpe < 8.5) {
+    return makeSignal({ ...base, status: "BUILD REPS", reason: `Strength ${pct}. Hitting the sweet spot. Keep the load and push for 1-2 more reps.` });
   }
-  if (lowEffort) {
-    return makeSignal({
-      ...base,
-      status: "INCREASE",
-      confidence,
-      reason: `Strength holding (${pct}) with RPE around ${(recentRpe as number).toFixed(1)}. There's room to push.`,
-    });
+  if (rpe >= 8.5 && rpe <= 9.0) {
+    return makeSignal({ ...base, status: "LOCK IN", reason: `Strength ${pct}. Form is challenged. Lock it in here until it feels easier.` });
   }
-  return makeSignal({
-    ...base,
-    status: "ON TRACK",
-    confidence,
-    reason: `Strength holding (${pct}) at normal effort. Right on track.`,
-  });
+  
+  // rpe > 9.0
+  return makeSignal({ ...base, status: "CEILING", reason: `Strength ${pct} but effort is maxed (RPE ${rpe.toFixed(1)}). Drop a rep next session to manage fatigue.` });
 }
+
 
 // ---------------------------------------------------------------------------
 // Main calculation
