@@ -21,13 +21,13 @@ import {
   calculateTrainingProgress,
   WorkoutSet,
   TopExercise,
-  MuscleStatus,
 } from "@/lib/strengthUtils";
 import {
   MUSCLE_GROUPS,
   LEG_MUSCLE_GROUPS,
   LegSubGroup,
 } from "@/lib/strengthMapping";
+import { getActiveBlockCountdown } from "@/lib/project35";
 
 export function WeeklyTrendsAnalytics() {
   const [isOpen, setIsOpen] = useState(false);
@@ -141,29 +141,24 @@ export function WeeklyTrendsAnalytics() {
   }, [trendData]);
 
   const getOverallCoachNote = (val: number) => {
-    if (val >= 1.5) return "Overall strength is trending up. Keep locking in your nutrition and training intensity—everything is working.";
-    if (val <= -2.0) return "Overall strength is dipping. Check recovery or sleep, and consider an extra working set if fatigue allows.";
-    return "Strength is holding steady. Ideal for maintaining muscle mass while cutting—stay the course.";
+    const block = getActiveBlockCountdown();
+    const isBulking = block.phaseTitle.toLowerCase().includes("bulk") || block.goal.toLowerCase().includes("bulk");
+    const isCutting = block.phaseTitle.toLowerCase().includes("cut") || block.goal.toLowerCase().includes("fat loss");
+
+    if (val >= 1.5) {
+      return "Overall strength is trending up. Excellent execution—keep the intensity locked in.";
+    }
+    if (val <= -2.0) {
+      return "Overall strength is dipping. Check recovery, sleep, and ensure you aren't overreaching.";
+    }
+    if (isBulking) {
+      return "Strength is holding steady during a growth block. Time to step up calories or push harder to force adaptation.";
+    }
+    if (isCutting) {
+      return "Strength is holding steady. Ideal for maintaining muscle mass while cutting—stay the course.";
+    }
+    return "Strength is holding steady. Solid baseline performance—keep pushing.";
   };
-
-    const STATUS_CHIP_STYLES: Record<MuscleStatus, string> = {
-    "UP WEIGHT": "bg-emerald-500/15 text-emerald-500 border-emerald-500/30",
-    "BUILD REPS": "bg-sky-500/15 text-sky-400 border-sky-500/30",
-    "SWEET SPOT": "bg-surface-2/60 text-foreground border-border/50",
-    "CEILING": "bg-amber-500/15 text-amber-500 border-amber-500/30",
-    "MONITOR": "bg-surface-2/60 text-muted-foreground border-border/50",
-    "DIAL BACK": "bg-rose-500/15 text-rose-500 border-rose-500/30",
-    "NO DATA": "bg-surface-2/60 text-muted-foreground border-border/50",
-  };
-
-
-  const renderStatusChip = (status: MuscleStatus) => (
-    <span
-      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide whitespace-nowrap ${STATUS_CHIP_STYLES[status]}`}
-    >
-      {status}
-    </span>
-  );
 
   const renderChangeBadge = (val: number, hasData: boolean) => {
     if (!hasData) {
@@ -350,8 +345,6 @@ export function WeeklyTrendsAnalytics() {
                   const val = data?.strengthChange || 0;
 
                   const signal = data?.signal;
-                  const chipStatus: MuscleStatus | null =
-                    hasActivity && signal && signal.status !== "NO DATA" ? signal.status : null;
                   const subStatus = !hasActivity ? "No recent data" : "Building baseline";
 
                   return (
@@ -365,9 +358,7 @@ export function WeeklyTrendsAnalytics() {
                         <div className="flex items-center justify-between min-w-0 pr-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <p className="text-sm font-semibold text-foreground truncate">{group}</p>
-                            {chipStatus ? (
-                              renderStatusChip(chipStatus)
-                            ) : (
+                            {!hasActivity && (
                               <span className="text-[11px] text-muted-foreground truncate font-normal">({subStatus})</span>
                             )}
                           </div>
