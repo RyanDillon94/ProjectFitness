@@ -182,6 +182,67 @@ function Dashboard({ userId }: { userId: string }) {
       {isFinalised && <FinaliseWeekBanner userId={userId} key={`bot-${currentDate}`} />}
 
       <CoachDrawer workout={workout} entries={entries} userId={userId} />
+
+
+import { useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { Upload } from "lucide-react";
+
+export function ImportHevyData() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const result = e.target?.result as string;
+        // Verify it parses as JSON before saving
+        JSON.parse(result); 
+        
+        // Save to the exact key the analytics component looks for
+        localStorage.setItem("p35_hevy_workouts", result);
+        
+        // Dispatch event to force React components to re-render if needed
+        window.dispatchEvent(new Event("storage")); 
+        alert("Hevy history imported successfully!");
+        
+      } catch (error) {
+        console.error("Failed to parse Hevy data", error);
+        alert("Invalid file format. Please upload a valid Hevy JSON export.");
+      }
+      
+      // Reset input so the same file can be uploaded again if needed
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <div className="flex items-center gap-4">
+      <input
+        type="file"
+        accept=".json"
+        ref={fileInputRef}
+        className="hidden"
+        onChange={handleFileUpload}
+      />
+      <Button 
+        variant="secondary" 
+        onClick={() => fileInputRef.current?.click()}
+        className="gap-2"
+      >
+        <Upload className="size-4" />
+        Import Hevy JSON
+      </Button>
+    </div>
+  );
+}
+
       
    {/*   <TestModePanel /> */}
 
