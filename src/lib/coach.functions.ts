@@ -42,7 +42,7 @@ OUTPUT FORMAT (when a Hevy workout is provided, review every exercise):
 For each exercise logged in the session:
 1. [Exercise Name]: [Working Weight kg] x [Reps] (Final Set RPE: [Value])
    - Assessment: [One-line assessment against target]
-   - Next Session Call: [UP WEIGHT | BUILD REPS | SWEET SPOT | CEILING | MONITOR | DIAL BACK | SWAP]
+   - Next Session Call: [STATUS TAG] - [Specific actionable instruction based on the matrix, e.g., "Add 2.5kg", "Push for +1 rep", "Drop 1 rep", etc.]
    - Notes Feedback: [Direct response to any note the user left in Hevy]
 End with a 3-bullet "Next Session Battle Plan" summarizing the primary targets.`;
 
