@@ -466,11 +466,8 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   const allDatesByMuscle = new Map<MuscleGroup, string[]>();
   const recentDatesByMuscle = new Map<MuscleGroup, string[]>();
   datesByMuscle.forEach((dates, muscle) => {
-    const sorted = Array.from(dates).sort().reverse(); // YYYY-MM-DD sorts correctly as text
+    const sorted = Array.from(dates).sort().reverse();
     allDatesByMuscle.set(muscle, sorted);
-    // Normally the last N sessions are "recent" and everything older is baseline.
-    // With very little history (e.g. only 2 sessions), use the latest session as
-    // "recent" so there is still something older to compare it against.
     const recentCount =
       sorted.length > RECENT_SESSIONS_PER_MUSCLE ? RECENT_SESSIONS_PER_MUSCLE : Math.max(1, sorted.length - 1);
     recentDatesByMuscle.set(muscle, sorted.slice(0, recentCount));
@@ -483,12 +480,18 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   const exerciseProgress: ExerciseProgress[] = [];
 
   history.forEach((exercise) => {
-    const recentDates = new Set(recentDatesByMuscle.get(exercise.muscle) ?? []);
+    // Determine "recent" vs "baseline" based on THIS exercise's own timeline
+    const exDates = Array.from(exercise.sessions.keys()).sort().reverse();
+    const recentCount = exDates.length > RECENT_SESSIONS_PER_MUSCLE
+      ? RECENT_SESSIONS_PER_MUSCLE
+      : Math.max(1, exDates.length - 1);
+    const recentExDates = new Set(exDates.slice(0, recentCount));
+
     const recentEntries: SessionEntry[] = [];
     const baselineEntries: SessionEntry[] = [];
 
     exercise.sessions.forEach((entry) => {
-      (recentDates.has(entry.date) ? recentEntries : baselineEntries).push(entry);
+      (recentExDates.has(entry.date) ? recentEntries : baselineEntries).push(entry);
     });
 
     const acuteVolume = recentEntries.reduce((sum, e) => sum + e.volume, 0);
@@ -525,10 +528,11 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
   });
 
   exerciseProgress.forEach((data) => {
+    // Skip exercises with no recent volume before adding them to the list
+    if (data.acuteVolume <= 0) return;
+
     const exercise = createTopExercise(data);
     muscleStrengthChanges[data.muscle].exercises.push(exercise);
-
-    if (data.acuteVolume <= 0) return;
 
     if (data.baseE1rm > 0 && data.recentE1rm > 0) {
       const strengthChange = ((data.recentE1rm - data.baseE1rm) / data.baseE1rm) * 100;
@@ -632,7 +636,7 @@ export function calculateTrainingProgress(sets: WorkoutSet[]): ProgressReport {
           subgroupStrengthWeight > 0 ? round1(subgroupWeightedStrength / subgroupStrengthWeight) : 0;
 
         const subgroupTopExercises = subgroupExercises
-          .filter((exercise) => exercise.acuteVolume > 0 || exercise.chronicVolume > 0)
+          .filter((exercise) => exercise.acuteVolume > 0)
           .map((exercise) => createTopExercise(exercise))
           .sort((a, b) => b.trendVolume - a.trendVolume)
           .slice(0, 3);
