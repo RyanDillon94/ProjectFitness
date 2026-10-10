@@ -75,13 +75,13 @@ function mapRawWorkout(raw: RawHevyWorkout): HevyWorkout {
 }
 
 /*
- * Merges workouts into "p35_hevy_workouts" by id (newest first) and
- * returns the merged list. Same behaviour the original sync had.
+ * Merges workouts into "p35_hevy_workouts" by id or startTime (newest first)
+ * and returns the merged list. This safely handles CSV imports that lack IDs.
  */
 function mergeIntoStoredWorkouts(workouts: HevyWorkout[]): HevyWorkout[] {
   const existingRaw = localStorage.getItem("p35_hevy_workouts");
 
-  let existingWorkouts: HevyWorkout[] = [];
+  let existingWorkouts: any[] = [];
 
   try {
     const parsed = existingRaw ? JSON.parse(existingRaw) : [];
@@ -90,9 +90,19 @@ function mergeIntoStoredWorkouts(workouts: HevyWorkout[]): HevyWorkout[] {
     existingWorkouts = [];
   }
 
-  const workoutMap = new Map<string, HevyWorkout>();
-  existingWorkouts.forEach((w) => workoutMap.set(w.id, w));
-  workouts.forEach((w) => workoutMap.set(w.id, w));
+  const workoutMap = new Map<string, any>();
+  
+  // Load existing workouts (uses startTime if ID is missing from CSV imports)
+  existingWorkouts.forEach((w) => {
+    const key = w.id || w.startTime;
+    if (key) workoutMap.set(key, w);
+  });
+  
+  // Load new API workouts
+  workouts.forEach((w) => {
+    const key = w.id || w.startTime;
+    if (key) workoutMap.set(key, w);
+  });
 
   const mergedWorkouts = Array.from(workoutMap.values()).sort((a, b) => {
     const timeA = new Date(a.startTime || "").getTime();
@@ -102,7 +112,7 @@ function mergeIntoStoredWorkouts(workouts: HevyWorkout[]): HevyWorkout[] {
 
   localStorage.setItem("p35_hevy_workouts", JSON.stringify(mergedWorkouts));
 
-  return mergedWorkouts;
+  return mergedWorkouts as HevyWorkout[];
 }
 
 export async function fetchLatestHevyWorkout({
