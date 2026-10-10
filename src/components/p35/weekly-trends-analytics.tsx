@@ -21,6 +21,7 @@ import {
   calculateTrainingProgress,
   WorkoutSet,
   TopExercise,
+  MuscleStatus,
 } from "@/lib/strengthUtils";
 import {
   MUSCLE_GROUPS,
@@ -61,9 +62,11 @@ export function WeeklyTrendsAnalytics() {
             const rawWeight = s.weightKg ?? s.weight ?? s.weight_kg ?? 0;
             const weight = Number(rawWeight);
             const reps = Number(s.reps ?? 0);
+            const rpeValue = s.rpe === null || s.rpe === undefined || s.rpe === "" ? NaN : Number(s.rpe);
+            const rpe = Number.isFinite(rpeValue) ? rpeValue : null;
 
             if (exerciseName && weight > 0 && reps > 0) {
-              extracted.push({ exerciseName, weight, reps, date });
+              extracted.push({ exerciseName, weight, reps, date, rpe });
             }
           });
         });
@@ -133,13 +136,22 @@ export function WeeklyTrendsAnalytics() {
     return "Strength is holding steady. Ideal for maintaining muscle mass while cutting—stay the course.";
   };
 
-  const getMuscleCoachNote = (val: number, hasData: boolean) => {
-    if (!hasData) return "No recent training recorded for this baseline window.";
-    if (val >= 1.5) return "Progressing well. Keep current progression scheme.";
-    if (val <= -3.0) return "Noticeable drop in e1RM. Monitor recovery or consider adding an incremental set.";
-    if (val < 0) return "Slight dip within normal recovery variance. Keep monitoring.";
-    return "Holding strong. Optimal retention profile.";
+  const STATUS_CHIP_STYLES: Record<MuscleStatus, string> = {
+    INCREASE: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30",
+    "ON TRACK": "bg-surface-2/60 text-muted-foreground border-border/50",
+    HOLD: "bg-sky-500/15 text-sky-400 border-sky-500/30",
+    WATCH: "bg-amber-500/15 text-amber-500 border-amber-500/30",
+    "DIAL BACK": "bg-rose-500/15 text-rose-500 border-rose-500/30",
+    "NO DATA": "bg-surface-2/60 text-muted-foreground border-border/50",
   };
+
+  const renderStatusChip = (status: MuscleStatus) => (
+    <span
+      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide whitespace-nowrap ${STATUS_CHIP_STYLES[status]}`}
+    >
+      {status}
+    </span>
+  );
 
   const renderChangeBadge = (val: number, hasData: boolean) => {
     if (!hasData) {
@@ -320,13 +332,10 @@ export function WeeklyTrendsAnalytics() {
                   const isExpanded = expandedGroup === group;
                   const val = data?.strengthChange || 0;
 
-                  const subStatus = !hasActivity 
-                    ? "No recent data" 
-                    : val >= 1.0 
-                      ? "Trending upward" 
-                      : val <= -1.0 
-                        ? "Dipping slightly" 
-                        : "Holding steady";
+                  const signal = data?.signal;
+                  const chipStatus: MuscleStatus | null =
+                    hasActivity && signal && signal.status !== "NO DATA" ? signal.status : null;
+                  const subStatus = !hasActivity ? "No recent data" : "Building baseline";
 
                   return (
                     <div key={group} className="border-b border-border/30 last:border-0">
@@ -339,7 +348,11 @@ export function WeeklyTrendsAnalytics() {
                         <div className="flex items-center justify-between min-w-0 pr-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <p className="text-sm font-semibold text-foreground truncate">{group}</p>
-                            <span className="text-[11px] text-muted-foreground truncate font-normal">({subStatus})</span>
+                            {chipStatus ? (
+                              renderStatusChip(chipStatus)
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground truncate font-normal">({subStatus})</span>
+                            )}
                           </div>
                           {hasActivity &&
                             (group === "Legs"
@@ -360,12 +373,12 @@ export function WeeklyTrendsAnalytics() {
                           <div className="flex items-start gap-2 p-2 rounded-lg bg-surface-2/60 text-xs">
                             <Lightbulb className="size-3.5 shrink-0 text-primary mt-0.5" />
                             <p className="text-muted-foreground leading-relaxed">
-                              {getMuscleCoachNote(data.strengthChange, hasActivity && data.baselineVolume > 0)}
+                              {signal?.reason ?? "Not enough history yet."}
                             </p>
                           </div>
 
                           <div className="space-y-1">
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top Exercises (4-Week Trend)</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top Exercises (Last 2 Sessions vs Baseline)</p>
                             {data.topExercises.map((exercise, idx) => renderExerciseTrend(exercise, idx))}
                           </div>
                         </div>
@@ -373,6 +386,12 @@ export function WeeklyTrendsAnalytics() {
 
                       {isExpanded && group === "Legs" && (
                         <div className="pb-3 pt-2 px-3 space-y-2 bg-surface-2/40 rounded-xl mb-2 border border-border/40">
+                          <div className="flex items-start gap-2 p-2 rounded-lg bg-surface-2/60 text-xs">
+                            <Lightbulb className="size-3.5 shrink-0 text-primary mt-0.5" />
+                            <p className="text-muted-foreground leading-relaxed">
+                              {signal?.reason ?? "Not enough history yet."}
+                            </p>
+                          </div>
                           <div className="space-y-1">
                             {LEG_MUSCLE_GROUPS.map((subGroup) => {
                               const subData = data.legSubGroups[subGroup];
@@ -407,7 +426,7 @@ export function WeeklyTrendsAnalytics() {
 
                                   {isSubExpanded && hasExercises && (
                                     <div className="ml-4 mr-1 mb-2 px-2.5 py-2 rounded-md bg-surface-2/60 border border-border/30 space-y-1">
-                                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">Top Exercises (4-Week Trend)</p>
+                                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pb-1">Top Exercises (Last 2 Sessions vs Baseline)</p>
                                       {subData.topExercises.map((exercise, idx) => renderExerciseTrend(exercise, idx))}
                                     </div>
                                   )}
