@@ -22,7 +22,7 @@ export type WorkoutSet = {
 export type MuscleStatus =
   | "UP WEIGHT"
   | "BUILD REPS"
-  | "LOCK IN"
+  | "SWEET SPOT"
   | "CEILING"
   | "MONITOR"
   | "DIAL BACK"
@@ -298,9 +298,8 @@ function buildSignal(input: SignalInput): MuscleSignal {
     return makeSignal({ ...base, status: "BUILD REPS", reason: `Strength ${pct}. Hitting the sweet spot. Keep the load and push for 1-2 more reps.` });
   }
   if (rpe >= 8.5 && rpe <= 9.0) {
-    return makeSignal({ ...base, status: "LOCK IN", reason: `Strength ${pct}. Form is challenged. Lock it in here until it feels easier.` });
-  }
-  
+  return makeSignal({ ...base, status: "SWEET SPOT", reason: `Strength ${pct}. Form is challenged. Hold it in the sweet spot until it feels easier.` });
+}
   // rpe > 9.0
   return makeSignal({ ...base, status: "CEILING", reason: `Strength ${pct} but effort is maxed (RPE ${rpe.toFixed(1)}). Drop a rep next session to manage fatigue.` });
 }
