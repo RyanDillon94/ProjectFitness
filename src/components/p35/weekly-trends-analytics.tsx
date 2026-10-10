@@ -146,14 +146,16 @@ export function WeeklyTrendsAnalytics() {
     return "Strength is holding steady. Ideal for maintaining muscle mass while cutting—stay the course.";
   };
 
-  const STATUS_CHIP_STYLES: Record<MuscleStatus, string> = {
-    INCREASE: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30",
-    "ON TRACK": "bg-surface-2/60 text-muted-foreground border-border/50",
-    HOLD: "bg-sky-500/15 text-sky-400 border-sky-500/30",
-    WATCH: "bg-amber-500/15 text-amber-500 border-amber-500/30",
+    const STATUS_CHIP_STYLES: Record<MuscleStatus, string> = {
+    "UP WEIGHT": "bg-emerald-500/15 text-emerald-500 border-emerald-500/30",
+    "BUILD REPS": "bg-sky-500/15 text-sky-400 border-sky-500/30",
+    "LOCK IN": "bg-surface-2/60 text-foreground border-border/50",
+    "CEILING": "bg-amber-500/15 text-amber-500 border-amber-500/30",
+    "MONITOR": "bg-surface-2/60 text-muted-foreground border-border/50",
     "DIAL BACK": "bg-rose-500/15 text-rose-500 border-rose-500/30",
     "NO DATA": "bg-surface-2/60 text-muted-foreground border-border/50",
   };
+
 
   const renderStatusChip = (status: MuscleStatus) => (
     <span
