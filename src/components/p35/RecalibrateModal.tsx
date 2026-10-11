@@ -182,7 +182,12 @@ Instead:
 1. Understand the actual problem.
 2. Consider the relevant evidence and current protocol.
 3. Identify what should actually change.
-4. If pivoting goals (e.g., transitioning from a cut to a lean bulk), ensure you update the active phase's "phaseType" and adjust "phaseStartWeight" and "phaseTargetWeight" accordingly.
+4. If pivoting goals or jumping to a new phase early (e.g., abandoning a cut for a lean bulk):
+   - You MUST change the 'status' of the new active phase to "active".
+   - You MUST change the 'status' of all previous bypassed phases to "complete".
+   - You MUST adjust the 'start' and 'end' dates of the new active phase's blocks so they begin today.
+   - You MUST shift all subsequent block dates to maintain continuous chronological order.
+   - You MUST ensure the new active phase has a "phaseType" ("cut", "bulk", or "maintenance") and appropriate "phaseStartWeight" and "phaseTargetWeight" values.
 5. Explain the reasoning clearly.
 6. Propose a specific change.
 7. Ask the athlete to explicitly confirm it.
