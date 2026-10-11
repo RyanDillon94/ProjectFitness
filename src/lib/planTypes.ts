@@ -23,7 +23,11 @@ export type PhaseDef = {
   summary: string;
   badges: string[];
   blocks: BlockDef[];
+  phaseType?: "cut" | "bulk" | "maintenance";
+  phaseStartWeight?: number; 
+  phaseTargetWeight?: number;
 };
+
 
 export type DailyTargetSet = {
   caloriesMin: number;
