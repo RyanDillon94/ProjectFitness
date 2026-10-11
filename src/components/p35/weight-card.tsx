@@ -21,8 +21,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { getGoalWeight, getStartWeight, lastSundayKey } from "@/lib/project35";
-import { Plus, TrendingDown } from "lucide-react";
+import { getGoalWeight, getStartWeight, lastSundayKey, getActiveBlockDetails } from "@/lib/project35";
+import { Plus, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
 export type WeightEntry = { date: string; weight: number };
@@ -55,13 +55,37 @@ export function WeightCard({
     }
   }, [propEntries]);
 
+  // Phase-aware target calculation
+  const { activePhase } = getActiveBlockDetails();
+  const isBulk = activePhase.phaseType === "bulk";
+  const startTarget = activePhase.phaseStartWeight ?? getStartWeight();
+  const goalTarget = activePhase.phaseTargetWeight ?? getGoalWeight();
+
   const sorted = useMemo(
     () => [...localEntries].sort((a, b) => a.date.localeCompare(b.date)),
     [localEntries]
   );
+  
   const latest = sorted[sorted.length - 1]?.weight;
-  const dropped = latest != null ? +(getStartWeight() - latest).toFixed(1) : 0;
-  const toGoal = latest != null ? +(latest - getGoalWeight()).toFixed(1) : null;
+  const netChange = latest != null ? +(latest - startTarget).toFixed(1) : 0;
+  const toGoal = latest != null ? +(latest - goalTarget).toFixed(1) : null;
+
+  // Dynamic summary stats
+  const summaryStats = useMemo(() => {
+    if (isBulk) {
+      return [
+        { label: "Current", value: latest != null ? `${latest} lb` : "—" },
+        { label: "Gained", value: netChange > 0 ? `+${netChange} lb` : `${netChange} lb` },
+        { label: "Surplus Cap", value: `${goalTarget} lb` },
+      ];
+    }
+    
+    return [
+      { label: "Current", value: latest != null ? `${latest} lb` : "—" },
+      { label: "Dropped", value: netChange < 0 ? `${Math.abs(netChange)} lb` : `${netChange} lb` },
+      { label: "To Goal", value: toGoal != null ? `${Math.abs(toGoal)} lb` : "—" },
+    ];
+  }, [isBulk, latest, netChange, goalTarget, toGoal]);
 
   const chartData = sorted.map((e) => {
     const [y, m, d] = e.date.split("-");
@@ -121,7 +145,11 @@ export function WeightCard({
     <section className="panel p-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <TrendingDown className="size-5 text-primary" />
+          {isBulk ? (
+            <TrendingUp className="size-5 text-primary" />
+          ) : (
+            <TrendingDown className="size-5 text-primary" />
+          )}
           <h2 className="text-lg font-bold">Weight Progression</h2>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
@@ -134,7 +162,7 @@ export function WeightCard({
             <DialogHeader>
               <DialogTitle>Log Sunday Weight</DialogTitle>
               <DialogDescription>
-                Enter your Sunday weekly average. Goal line is {getGoalWeight()} lbs.
+                Enter your Sunday weekly average. Goal line is {goalTarget} lbs.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -160,9 +188,9 @@ export function WeightCard({
               </div>
               {Number(weight) > 0 && (
                 <p className="text-sm text-muted-foreground">
-                  Pounds dropped from start ({getStartWeight()} lbs):{" "}
+                  {isBulk ? "Gained" : "Dropped"} from phase start ({startTarget} lbs):{" "}
                   <span className="font-semibold text-primary">
-                    {(getStartWeight() - Number(weight)).toFixed(1)} lbs
+                    {Math.abs(startTarget - Number(weight)).toFixed(1)} lbs
                   </span>
                 </p>
               )}
@@ -177,11 +205,7 @@ export function WeightCard({
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
-        {[
-          { label: "Current", value: latest != null ? `${latest} lb` : "—" },
-          { label: "Dropped", value: dropped ? `${dropped} lb` : "—" },
-          { label: "To goal", value: toGoal != null ? `${Math.max(0, toGoal)} lb` : "—" },
-        ].map((s) => (
+        {summaryStats.map((s) => (
           <div
             key={s.label}
             className="rounded-lg border border-border bg-surface-2/60 p-3 text-center"
@@ -208,7 +232,11 @@ export function WeightCard({
                 axisLine={false}
               />
               <YAxis
-                domain={[getGoalWeight() - 6, "dataMax + 5"]}
+                domain={
+                  isBulk
+                    ? ["dataMin - 5", Math.max(goalTarget + 5, latest ? latest + 5 : 0)]
+                    : [Math.min(goalTarget - 6, latest ? latest - 6 : 0), "dataMax + 5"]
+                }
                 tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
@@ -222,11 +250,11 @@ export function WeightCard({
                 }}
               />
               <ReferenceLine
-                y={getGoalWeight()}
+                y={goalTarget}
                 stroke="var(--gold)"
                 strokeDasharray="5 4"
                 label={{
-                  value: `Goal ${getGoalWeight()}`,
+                  value: `${isBulk ? 'Cap' : 'Goal'} ${goalTarget}`,
                   fill: "var(--gold)",
                   fontSize: 11,
                   position: "insideTopRight",
