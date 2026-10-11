@@ -1,10 +1,10 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getPhases, type PhaseDef } from "@/lib/project35";
+import { getPhases, getActiveBlockDetails, type PhaseDef } from "@/lib/project35";
 import { getPlan } from "@/lib/planEngine";
 import { getDeloadOffset } from "@/utils/dateUtils";
-import { Calendar, Map } from "lucide-react";
+import { Calendar, Map, CheckCircle2 } from "lucide-react";
 import { RecalibrateModal } from "@/components/p35/RecalibrateModal";
 
 function getShiftedBlockDates(blockStart: string, blockEnd: string, offsetDays: number) {
@@ -67,6 +67,10 @@ export function Roadmap() {
   const offsetDays = getDeloadOffset();
   const plan = getPlan();
   const phases = getPhases();
+  
+  // Fetch dynamic active phase from the engine
+  const { activePhase } = getActiveBlockDetails();
+  
   const firstPhase = phases[0];
   const lastPhase = phases[phases.length - 1];
   const footerQuote = plan.footerQuote;
@@ -101,7 +105,8 @@ export function Roadmap() {
         {endMonthYear ? `Culminating ${endMonthYear}.` : ""}
       </p>
 
-      <Accordion type="single" collapsible defaultValue={`phase-${firstPhase.id}`} className="mt-4">
+      {/* Accordion now defaults to the active phase's ID */}
+      <Accordion type="single" collapsible defaultValue={`phase-${activePhase?.id ?? firstPhase.id}`} className="mt-4">
         {phases.map((phase) => (
           <AccordionItem key={phase.id} value={`phase-${phase.id}`} className="border-border">
             <AccordionTrigger className="py-4 hover:no-underline">
@@ -110,14 +115,25 @@ export function Roadmap() {
                   <span className="font-display text-sm font-bold">
                     Phase {phase.id}: {phase.title}
                   </span>
+                  
+                  {/* Fixed Badge rendering logic to handle all three statuses */}
                   <Badge
                     className={
                       phase.status === "active"
                         ? "bg-primary/20 text-primary hover:bg-primary/25"
+                        : phase.status === "complete"
+                        ? "bg-surface-2 text-muted-foreground hover:bg-surface-2/80"
                         : "bg-muted text-muted-foreground hover:bg-muted"
                     }
                   >
-                    {phase.status === "active" ? "Active" : "Upcoming"}
+                    {phase.status === "active" && "Active"}
+                    {phase.status === "complete" && (
+                      <span className="flex items-center gap-1">
+                        <CheckCircle2 className="size-3" />
+                        Complete
+                      </span>
+                    )}
+                    {phase.status === "upcoming" && "Upcoming"}
                   </Badge>
                 </div>
                 <span className="text-xs text-muted-foreground">
