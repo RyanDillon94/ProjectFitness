@@ -310,6 +310,10 @@ Each phase represents approximately 3 months.
 
 Each block represents approximately 6–7 weeks of execution.
 
+Each phase MUST include a "phaseType" ("cut", "bulk", or "maintenance").
+
+Each phase MUST include a realistic "phaseStartWeight" and "phaseTargetWeight" for that specific 3-month window.
+
 The two blocks within each phase must have distinct strategic purposes and should represent progression from the first block to the second.
 
 Do NOT simply duplicate the same objectives across both blocks.
