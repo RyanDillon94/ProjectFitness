@@ -1,5 +1,6 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getPhases, getActiveBlockDetails, type PhaseDef } from "@/lib/project35";
 import { getPlan } from "@/lib/planEngine";
@@ -190,7 +191,42 @@ export function Roadmap() {
         ))}
       </Accordion>
 
-      <div className="mt-6 flex justify-center border-t border-border/40 pb-2 pt-4">
+      <div className="mt-6 flex flex-col items-center gap-4 border-t border-border/40 pb-2 pt-4">
+        {/* TEMPORARY DEV BUTTON - TAP ONCE ON PHONE, THEN DELETE THIS CODE */}
+        <Button 
+          variant="destructive"
+          onClick={() => {
+            const plan = JSON.parse(localStorage.getItem("ascension_user_profile") || "{}");
+            if (!plan.phases) return;
+
+            const today = new Date();
+            plan.phases[0].status = "complete";
+            plan.phases[1].status = "active";
+            plan.phases[1].phaseType = "bulk";
+            plan.phases[1].phaseStartWeight = 190; 
+            plan.phases[1].phaseTargetWeight = 205; 
+            
+            const currentPhase2Start = new Date(plan.phases[1].blocks[0].start);
+            const diffDays = Math.ceil((today.getTime() - currentPhase2Start.getTime()) / (1000 * 60 * 60 * 24));
+            
+            plan.phases.forEach((phase: any) => {
+              phase.blocks.forEach((block: any) => {
+                const bStart = new Date(block.start);
+                const bEnd = new Date(block.end);
+                bStart.setDate(bStart.getDate() + diffDays);
+                bEnd.setDate(bEnd.getDate() + diffDays);
+                block.start = bStart.toISOString().split('T')[0];
+                block.end = bEnd.toISOString().split('T')[0];
+              });
+            });
+            
+            localStorage.setItem("ascension_user_profile", JSON.stringify(plan));
+            window.location.reload();
+          }}
+        >
+          DEV: Fast-Forward to Phase 2
+        </Button>
+
         <RecalibrateModal />
       </div>
 
