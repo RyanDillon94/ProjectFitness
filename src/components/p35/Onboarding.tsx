@@ -423,13 +423,16 @@ The JSON must exactly follow this schema:
     }
   ],
 
-  "phases": [
+    "phases": [
     {
       "id": 1,
       "title": "Phase Name",
       "window": "Sep 2026 - Dec 2026",
       "status": "active",
       "summary": "",
+      "phaseType": "cut", 
+      "phaseStartWeight": 210, 
+      "phaseTargetWeight": 195,
       "badges": ["Conditioning", "Fat Loss"],
       "blocks": [
         {
