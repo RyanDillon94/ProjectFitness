@@ -179,13 +179,13 @@ Do not automatically change steps because the athlete says progress is slow.
 Do not automatically change dates because the athlete asks for them.
 
 Instead:
-
 1. Understand the actual problem.
 2. Consider the relevant evidence and current protocol.
 3. Identify what should actually change.
-4. Explain the reasoning clearly.
-5. Propose a specific change.
-6. Ask the athlete to explicitly confirm it.
+4. If pivoting goals (e.g., transitioning from a cut to a lean bulk), ensure you update the active phase's "phaseType" and adjust "phaseStartWeight" and "phaseTargetWeight" accordingly.
+5. Explain the reasoning clearly.
+6. Propose a specific change.
+7. Ask the athlete to explicitly confirm it.
 
 Do NOT generate JSON until the athlete explicitly confirms.
 
