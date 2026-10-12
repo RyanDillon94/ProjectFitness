@@ -64,7 +64,7 @@ const COACH_NAME = IS_PROJECT_35
   ? "Coach Clive"
   : "Coach Ascension";
 
-const WORKOUT_HISTORY_DAYS = 7;
+const WORKOUT_HISTORY_DAYS = 14;
 
 const MODEL_COOLDOWN_MS = 60_000;
 
@@ -1071,40 +1071,40 @@ function buildContext(
 // ROUTINES
 // ============================================================
 
-function getRecentRoutines() {
-  const history =
-    getRecentHevyHistory();
+function getRecentRoutines(
+  currentWorkout: HevyWorkout | null = null,
+  lookbackDays = WORKOUT_HISTORY_DAYS,
+) {
+  const stored = getStoredHevyHistory();
+
+  const cutoff =
+    Date.now() -
+    lookbackDays * 24 * 60 * 60 * 1000;
+
+  const recent = stored.filter((item) => {
+    const time = parseWorkoutDate(item.startTime);
+    return time > 0 && time >= cutoff;
+  });
 
   if (
-    history.length === 0
+    currentWorkout?.title &&
+    !recent.some((s) => s.title?.trim() === currentWorkout.title?.trim())
   ) {
-    return [];
+    recent.push(currentWorkout as StoredHevyWorkout);
   }
 
-  const sorted =
-    [...history].sort(
-      (a, b) =>
-        parseWorkoutDate(
-          b.startTime,
-        ) -
-        parseWorkoutDate(
-          a.startTime,
-        ),
-    );
+  const sorted = [...recent].sort(
+    (a, b) =>
+      parseWorkoutDate(b.startTime) -
+      parseWorkoutDate(a.startTime),
+  );
 
-  const titles: string[] =
-    [];
+  const titles: string[] = [];
 
-  for (
-    const session of sorted
-  ) {
-    const title =
-      session.title?.trim();
+  for (const session of sorted) {
+    const title = session.title?.trim();
 
-    if (
-      title &&
-      !titles.includes(title)
-    ) {
+    if (title && !titles.includes(title)) {
       titles.push(title);
     }
   }
@@ -1579,7 +1579,7 @@ export function CoachDrawer({
   const recentRoutines =
     useMemo(
       () =>
-        getRecentRoutines(),
+        getRecentRoutines(workout),
       [workout],
     );
 
