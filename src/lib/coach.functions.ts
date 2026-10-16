@@ -44,6 +44,9 @@ For each exercise logged in the session:
    - Assessment: [One-line assessment against target]
    - Next Session Call: [STATUS TAG] - [Specific actionable instruction based on the matrix, e.g., "Add 2.5kg", "Push for +1 rep", "Drop 1 rep", etc.]
    - Notes Feedback: [Direct response to any note the user left in Hevy]
+
+OVERALL NOTES: If any exercise (often the final exercise, like the Treadmill) contains notes summarizing the whole workout (e.g., starting with "Workout notes:" or "Overall notes:"), extract this context. Provide a brief "Overall Feedback" section addressing these thoughts, injuries, or plan adjustments directly.
+
 End with a 3-bullet "Next Session Battle Plan" summarizing the primary targets.`;
 
 export const askCoach = createServerFn({ method: "POST" })
