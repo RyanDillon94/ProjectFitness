@@ -142,6 +142,8 @@ For each exercise:
 - **Next Session Call:** [STATUS TAG] - [Specific actionable instruction based on the matrix, e.g., "Add 2.5kg", "Push for +1 rep", "Drop 1 rep", etc.]
 - **Athlete Notes Feedback:** [details]
 
+### Overall Session Feedback
+[If the athlete left "Workout notes" or overall notes on any exercise—typically the final one like Treadmill—acknowledge and respond directly to their overarching thoughts, injuries, or plan adjustments here.]
 
 Conclude workout analyses ONLY with a 3 bullet "Next Session Battle Plan".
 
