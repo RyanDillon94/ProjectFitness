@@ -86,8 +86,22 @@ export const askCoach = createServerFn({ method: "POST" })
 
     const json = (await res.json()) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      usageMetadata?: {
+        promptTokenCount: number;
+        candidatesTokenCount: number;
+        totalTokenCount: number;
+      };
     };
     
+    // Log the token usage to your server console
+    if (json.usageMetadata) {
+      console.log("--- GEMINI TOKEN USAGE ---");
+      console.log(`Input Tokens (Prompt + Context): ${json.usageMetadata.promptTokenCount}`);
+      console.log(`Output Tokens (Response): ${json.usageMetadata.candidatesTokenCount}`);
+      console.log(`Total Tokens: ${json.usageMetadata.totalTokenCount}`);
+      console.log("--------------------------");
+    }
+
     const reply = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!reply) throw new Error("Coach returned an empty answer.");
     return { reply };
