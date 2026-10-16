@@ -360,6 +360,9 @@ function isUsableCoachModel(
     "transcribe",
     "robotics",
     "veo",
+    "preview",
+    "experimental",
+    "deep-research"
   ];
 
   return !excluded.some((x) =>
@@ -1161,6 +1164,11 @@ async function callGemini(
 ): Promise<{
   text: string;
   model: string;
+  tokens?: {
+    prompt: number;
+    candidates: number;
+    total: number;
+  };
 }> {
   const recentHistory =
     history.slice(
@@ -1304,9 +1312,19 @@ async function callGemini(
             model,
           );
 
+          const usage = data.usageMetadata;
+          const tokens = usage
+            ? {
+                prompt: usage.promptTokenCount ?? 0,
+                candidates: usage.candidatesTokenCount ?? 0,
+                total: usage.totalTokenCount ?? 0,
+              }
+            : undefined;
+
           return {
             text,
             model,
+            tokens,
           };
         }
 
@@ -1628,6 +1646,12 @@ export function CoachDrawer({
     useState<string | null>(
       null,
     );
+    
+  const [tokenStats, setTokenStats] = useState<{
+    prompt: number;
+    candidates: number;
+    total: number;
+  } | null>(null);
 
   const endRef =
     useRef<HTMLDivElement>(
@@ -1844,6 +1868,9 @@ export function CoachDrawer({
           setActiveModel(
             geminiResult.model,
           );
+          if (geminiResult.tokens) {
+            setTokenStats(geminiResult.tokens);
+          }
 
           // ------------------------------------------------------
           // Persist assistant message without making the user
@@ -2013,13 +2040,21 @@ export function CoachDrawer({
 
                     {isLastAssistant &&
                       activeModel && (
-                        <div className="flex items-center gap-1 pl-2 text-[10px] text-muted-foreground/60">
+                        <div className="flex flex-wrap items-center gap-1.5 pl-2 text-[10px] text-muted-foreground/60">
                           <Cpu className="size-2.5" />
                           <span>
                             {
                               activeModel
                             }
                           </span>
+                          {tokenStats && (
+                            <>
+                              <span>•</span>
+                              <span>
+                                {tokenStats.total.toLocaleString()} tokens ({tokenStats.prompt.toLocaleString()} in / {tokenStats.candidates.toLocaleString()} out)
+                              </span>
+                            </>
+                          )}
                         </div>
                       )}
                   </div>
