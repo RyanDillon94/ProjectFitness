@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DAILY_TARGETS, getActiveHabits, todayKey } from "@/lib/project35";
 import { useHabitDay } from "@/lib/p35-cloud";
-import { Beef, BookOpen, ChevronLeft, ChevronRight, Dumbbell, Footprints, Sunrise, Utensils } from "lucide-react";
+import { getHolidayForDate } from "@/lib/holidayMode";
+import { HolidayBanner, HolidayModeDialog } from "./holiday-mode";
+import { Beef, BookOpen, ChevronLeft, ChevronRight, Dumbbell, Footprints, Palmtree, Sunrise, Utensils } from "lucide-react";
 import { toast } from "sonner";
 
 // Pure UTC helper to avoid timezone day skipping
@@ -38,6 +40,8 @@ export function NonNegotiables({ userId, onDateChange }: { userId: string | null
   }, [selectedDay]);
 
   const activeHabits = useMemo(() => getActiveHabits(currentDateObj), [currentDateObj]);
+  const holiday = useMemo(() => getHolidayForDate(selectedDay), [selectedDay]);
+  const holidayToday = useMemo(() => getHolidayForDate(actualToday), [actualToday]);
 
   const journalKey = `p35_journal_${selectedDay}`;
   const [note, setNote] = useState<string>("");
@@ -185,8 +189,14 @@ export function NonNegotiables({ userId, onDateChange }: { userId: string | null
       {/* Top Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <Dumbbell className="size-5 shrink-0 text-primary" />
-          <h2 className="text-base sm:text-lg font-bold">Daily Non-Negotiables</h2>
+          {holiday ? (
+            <Palmtree className="size-5 shrink-0 text-amber-500" />
+          ) : (
+            <Dumbbell className="size-5 shrink-0 text-primary" />
+          )}
+          <h2 className="text-base sm:text-lg font-bold">
+            {holiday ? "Holiday Habits" : "Daily Non-Negotiables"}
+          </h2>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
@@ -198,21 +208,25 @@ export function NonNegotiables({ userId, onDateChange }: { userId: string | null
         </div>
       </div>
 
-      {/* Target Metrics Grid */}
-      <div className="grid gap-2 sm:grid-cols-2">
-        {targetStats.map((s) => (
-          <div
-            key={s.label}
-            className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/60 p-3"
-          >
-            <s.icon className="mt-0.5 size-4 shrink-0 text-primary" />
-            <div className="min-w-0">
-              <p className="stat-label">{s.label}</p>
-              <p className="text-sm font-semibold break-words">{s.value}</p>
+      {/* Target Metrics Grid (replaced by the holiday banner while on holiday) */}
+      {holiday ? (
+        <HolidayBanner holiday={holiday} selectedDay={selectedDay} />
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {targetStats.map((s) => (
+            <div
+              key={s.label}
+              className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/60 p-3"
+            >
+              <s.icon className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="stat-label">{s.label}</p>
+                <p className="text-sm font-semibold break-words">{s.value}</p>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Date Stepper Bar */}
       <div className="flex items-center justify-between rounded-lg border border-border bg-surface-2/40 px-3 py-2">
@@ -245,7 +259,7 @@ export function NonNegotiables({ userId, onDateChange }: { userId: string | null
       {/* Habits Checklist for Selected Date */}
       {/* ADDED key={selectedDay} to force UI remount on date change */}
       <div className="space-y-2 pt-0.5" key={selectedDay}>
-        <p className="stat-label">Habit Check</p>
+        <p className="stat-label">{holiday ? "Holiday Habit Check" : "Habit Check"}</p>
         {activeHabits.map((habit) => {
           const isChecked = Boolean(habits[habit.key]);
           return (
@@ -253,14 +267,20 @@ export function NonNegotiables({ userId, onDateChange }: { userId: string | null
               key={habit.key}
               className={`flex min-h-12 cursor-pointer items-center justify-between rounded-lg border px-3 py-3 transition-colors ${
                 isChecked
-                  ? "border-primary/40 bg-primary/10"
+                  ? holiday
+                    ? "border-amber-500/40 bg-amber-500/10"
+                    : "border-primary/40 bg-primary/10"
                   : "border-border bg-surface-2/40 hover:bg-surface-2/70 active:bg-surface-2"
               }`}
             >
               <div className="min-w-0 pr-3">
                 <span
                   className={`block text-sm font-medium leading-snug ${
-                    isChecked ? "text-primary font-semibold" : "text-foreground"
+                    isChecked
+                      ? holiday
+                        ? "text-amber-500 font-semibold"
+                        : "text-primary font-semibold"
+                      : "text-foreground"
                   }`}
                 >
                   {habit.label}
@@ -277,6 +297,11 @@ export function NonNegotiables({ userId, onDateChange }: { userId: string | null
             </label>
           );
         })}
+        {!holidayToday && selectedDay === actualToday && (
+          <div className="pt-1">
+            <HolidayModeDialog />
+          </div>
+        )}
       </div>
 
       {/* Daily Journal Note for Selected Date */}

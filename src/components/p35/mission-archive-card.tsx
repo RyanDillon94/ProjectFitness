@@ -18,6 +18,7 @@ import {
   ChevronDown,
   AlertTriangle,
   X,
+  Palmtree,
 } from "lucide-react";
 import { getActiveBlockCountdown } from "@/lib/project35";
 import { APP_NAME } from "@/lib/config";
@@ -30,7 +31,26 @@ type ArchivedWeek = {
   overallPercentage: number;
   weeklyProtocolGoals: any[];
   aiSynthesis: string;
+  breakdown?: { label: string; completed: number; total: number }[];
+  holidayMode?: {
+    periods: {
+      title: string;
+      start: string;
+      end: string;
+      days: number;
+      summary?: string;
+      habits: string[];
+    }[];
+  };
 };
+
+function formatHolidayDay(key: string) {
+  return new Date(`${key}T12:00:00Z`).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
 
 function FormattedSynthesis({ text }: { text: string }) {
   return (
@@ -310,6 +330,8 @@ export function MissionArchiveCard() {
               const isExpanded = !!expandedWeeks[archive.date];
               const isAIExpanded = !!expandedAI[archive.date];
               const isDeleting = deleteConfirm === archive.date;
+              const holidayPeriods = archive.holidayMode?.periods ?? [];
+              const isHolidayWeek = holidayPeriods.length > 0;
 
               return (
                 <div
@@ -317,6 +339,8 @@ export function MissionArchiveCard() {
                   className={`rounded-xl border overflow-hidden relative group transition-colors ${
                     isDeleting
                       ? "border-rose-500/60 bg-rose-500/5"
+                      : isHolidayWeek
+                      ? "border-amber-500/50 bg-amber-500/5"
                       : "border-border bg-surface-2/40"
                   }`}
                 >
@@ -337,6 +361,12 @@ export function MissionArchiveCard() {
                         className="min-w-0 flex-1 text-left"
                       >
                         <div className="flex flex-col">
+                          {isHolidayWeek && (
+                            <span className="mb-1.5 inline-flex w-fit items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-500">
+                              <Palmtree className="size-3" />
+                              Holiday Mode · Off Plan
+                            </span>
+                          )}
                           <span className="font-bold text-sm leading-tight text-foreground truncate">
                             {phaseTitle}
                           </span>
@@ -437,6 +467,48 @@ export function MissionArchiveCard() {
                   {/* EXPANDED WEEK CONTENT */}
                   {isExpanded && !isDeleting && (
                     <div className="border-t border-border/50 px-4 py-4 space-y-4">
+                      {/* HOLIDAY MODE */}
+                      {isHolidayWeek && (
+                        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+                          <p className="text-[10px] uppercase tracking-wider text-amber-500 font-bold flex items-center gap-1.5">
+                            <Palmtree className="size-3.5" />
+                            Holiday Week · Not a normal plan week
+                          </p>
+                          {holidayPeriods.map((period, idx) => (
+                            <div key={`${period.start}-${idx}`} className="space-y-1">
+                              <p className="text-xs font-semibold text-foreground">
+                                {period.title}{" "}
+                                <span className="font-normal text-muted-foreground">
+                                  ({formatHolidayDay(period.start)} – {formatHolidayDay(period.end)}, {period.days}{" "}
+                                  {period.days === 1 ? "day" : "days"})
+                                </span>
+                              </p>
+                              {period.summary && (
+                                <p className="text-[11px] italic text-muted-foreground">{period.summary}</p>
+                              )}
+                              <ul className="space-y-0.5">
+                                {period.habits.map((label) => {
+                                  const stat = archive.breakdown?.find((b) => b.label === label);
+                                  return (
+                                    <li
+                                      key={label}
+                                      className="flex items-center justify-between gap-2 text-xs"
+                                    >
+                                      <span className="text-foreground/90">• {label}</span>
+                                      {stat && (
+                                        <span className="font-semibold text-amber-500">
+                                          {stat.completed}/{stat.total}
+                                        </span>
+                                      )}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       {/* PROTOCOL EXECUTION */}
                       {archive.weeklyProtocolGoals?.length > 0 && (
                         <div className="space-y-2">

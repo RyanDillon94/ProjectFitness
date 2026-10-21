@@ -94,7 +94,7 @@ export function WeeklyTrendsAnalytics() {
   const trendData = useMemo(() => {
     if (typeof window === "undefined") return [];
 
-    const loadedArchives: { date: string; score: number; dateRange?: string }[] = [];
+    const loadedArchives: { date: string; score: number; dateRange?: string; isHoliday: boolean }[] = [];
 
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -106,6 +106,7 @@ export function WeeklyTrendsAnalytics() {
               date: parsed.date,
               score: parsed.overallPercentage,
               dateRange: parsed.dateRange,
+              isHoliday: (parsed.holidayMode?.periods?.length ?? 0) > 0,
             });
           }
         } catch (e) {
@@ -127,7 +128,7 @@ export function WeeklyTrendsAnalytics() {
       })}`;
 
       return {
-        weekLabel: archive.dateRange || weekLabel,
+        weekLabel: `${archive.dateRange || weekLabel}${archive.isHoliday ? " (Holiday)" : ""}`,
         score: Math.min(100, Math.max(0, archive.score)),
       };
     });

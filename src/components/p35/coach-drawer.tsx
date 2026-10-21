@@ -36,6 +36,7 @@ import {
   getGoalWeight,
   getLongTermTarget,
   getActiveBlockCountdown,
+  todayKey,
 } from "@/lib/project35";
 
 import {
@@ -55,6 +56,7 @@ import {
 
 import { toast } from "sonner";
 import { APP_NAME, IS_PROJECT_35 } from "@/lib/config";
+import { getHolidayForDate } from "@/lib/holidayMode";
 
 // ============================================================
 // CONSTANTS
@@ -1057,6 +1059,14 @@ function buildContext(
     `Daily Nutrition/Habit Standards: ${DAILY_TARGETS.caloriesMin}–${DAILY_TARGETS.caloriesMax} kcal, ${DAILY_TARGETS.protein}g+ protein, ${DAILY_TARGETS.steps} steps daily.`,
     `Long-Term ${getLongTermTarget()}`,
   ];
+
+  const holiday = getHolidayForDate(todayKey());
+
+  if (holiday) {
+    lines.push(
+      `HOLIDAY MODE ACTIVE (${holiday.start} to ${holiday.end}, "${holiday.title}"): normal daily standards are paused. Today's holiday habits: ${holiday.habits.map((h) => h.label).join(", ")}. Coach against these, not the normal targets.`,
+    );
+  }
 
   const history =
     buildHistoryLines(

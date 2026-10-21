@@ -49,7 +49,7 @@ const modelCooldowns = new Map<string, number>();
 // FORMATTED AI MESSAGE
 // ============================================================
 
-function FormattedMessage({ text }: { text: string }) {
+export function FormattedMessage({ text }: { text: string }) {
   const cleanedText = text
     .replace(/```json[\s\S]*?```/g, "")
     .replace(/```[\s\S]*?```/g, "")
@@ -128,7 +128,7 @@ function FormattedMessage({ text }: { text: string }) {
 // TYPES
 // ============================================================
 
-type ChatMessage = {
+export type ChatMessage = {
   role: "user" | "model";
   text: string;
 };
@@ -312,9 +312,10 @@ function cooldown(model: string) {
 // GEMINI REQUEST
 // ============================================================
 
-async function callGemini(
+export async function callGemini(
   apiKey: string,
   messages: ChatMessage[],
+  systemPrompt: string = buildSystemPrompt(),
 ): Promise<string> {
   const contents = messages.slice(-8).map((message) => ({
     role: message.role,
@@ -323,7 +324,7 @@ async function callGemini(
 
   const body = JSON.stringify({
     systemInstruction: {
-      parts: [{ text: buildSystemPrompt() }],
+      parts: [{ text: systemPrompt }],
     },
     contents,
     generationConfig: {
