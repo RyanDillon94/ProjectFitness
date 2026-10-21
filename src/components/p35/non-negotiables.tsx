@@ -3,7 +3,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DAILY_TARGETS, getActiveHabits, todayKey } from "@/lib/project35";
 import { useHabitDay } from "@/lib/p35-cloud";
 import { getHolidayForDate } from "@/lib/holidayMode";
-import { HolidayBanner, HolidayModeDialog } from "./holiday-mode";
+import { HolidayBanner } from "./holiday-mode";
 import { Beef, BookOpen, ChevronLeft, ChevronRight, Dumbbell, Footprints, Palmtree, Sunrise, Utensils } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,7 +41,6 @@ export function NonNegotiables({ userId, onDateChange }: { userId: string | null
 
   const activeHabits = useMemo(() => getActiveHabits(currentDateObj), [currentDateObj]);
   const holiday = useMemo(() => getHolidayForDate(selectedDay), [selectedDay]);
-  const holidayToday = useMemo(() => getHolidayForDate(actualToday), [actualToday]);
 
   const journalKey = `p35_journal_${selectedDay}`;
   const [note, setNote] = useState<string>("");
@@ -297,11 +296,6 @@ export function NonNegotiables({ userId, onDateChange }: { userId: string | null
             </label>
           );
         })}
-        {!holidayToday && selectedDay === actualToday && (
-          <div className="pt-1">
-            <HolidayModeDialog />
-          </div>
-        )}
       </div>
 
       {/* Daily Journal Note for Selected Date */}
