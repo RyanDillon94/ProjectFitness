@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Check, Loader2, Palmtree, Send, X } from "lucide-react";
+import { Check, Loader2, Palmtree, Send, Umbrella, X } from "lucide-react";
 import { toast } from "sonner";
 import { APP_NAME } from "@/lib/config";
 import { DAILY_TARGETS, getActiveHabits, todayKey } from "@/lib/project35";
@@ -19,6 +19,7 @@ import {
   activateHolidayMode,
   endHolidayMode,
   formatHolidayRange,
+  getHolidayForDate,
   holidayLength,
   shiftDateKey,
   type HolidayDraft,
@@ -117,7 +118,7 @@ function parseHolidayDraft(raw: unknown): HolidayDraft | null {
   };
 }
 
-export function HolidayModeDialog() {
+export function HolidayModeDialog({ trigger }: { trigger?: ReactNode } = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -246,14 +247,16 @@ export function HolidayModeDialog() {
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full gap-2 text-xs border-amber-500/40 text-amber-500 hover:bg-amber-500/10 hover:text-amber-400"
-        >
-          <Palmtree className="size-4" />
-          Holiday Mode
-        </Button>
+        {trigger ?? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-2 text-xs border-amber-500/40 text-amber-500 hover:bg-amber-500/10 hover:text-amber-400"
+          >
+            <Palmtree className="size-4" />
+            Holiday Mode
+          </Button>
+        )}
       </DialogTrigger>
 
       <DialogContent className="w-[95vw] max-w-lg h-[100dvh] max-h-[100dvh] sm:h-[90dvh] sm:max-h-[90dvh] flex flex-col overflow-hidden p-0 gap-0">
@@ -388,6 +391,58 @@ export function HolidayModeDialog() {
   );
 }
 
+function confirmEndHoliday(holiday: HolidayPeriod, today: string) {
+  if (!window.confirm("End Holiday Mode and go back to your normal non-negotiables from today?"))
+    return;
+  endHolidayMode(holiday.id, today);
+  toast.success("Holiday Mode ended. Back on plan.");
+  window.setTimeout(() => window.location.reload(), 250);
+}
+
+export function HolidayModeCard() {
+  const today = todayKey();
+  const holiday = getHolidayForDate(today);
+
+  return (
+    <div
+      className={`panel flex items-center justify-between w-full p-4 gap-2 ${holiday ? "border-amber-500/40" : ""}`}
+    >
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <Palmtree
+          className={`size-5 shrink-0 ${holiday ? "text-amber-500 animate-pulse" : "text-primary"}`}
+        />
+        <div className="min-w-0 w-full">
+          <p className="text-sm font-bold truncate text-foreground">Holiday Mode</p>
+          <p className="text-xs text-muted-foreground truncate w-full">
+            {holiday ? `${holiday.title} · ${formatHolidayRange(holiday)}` : "Standard Execution"}
+          </p>
+        </div>
+      </div>
+
+      {holiday ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => confirmEndHoliday(holiday, today)}
+          className="gap-1.5 h-8 text-xs bg-amber-500 text-black border-amber-600 hover:bg-amber-600 font-semibold shrink-0"
+        >
+          <Umbrella className="size-3.5" />
+          <span>End</span>
+        </Button>
+      ) : (
+        <HolidayModeDialog
+          trigger={
+            <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs shrink-0">
+              <Umbrella className="size-3.5" />
+              <span>Plan</span>
+            </Button>
+          }
+        />
+      )}
+    </div>
+  );
+}
+
 export function HolidayBanner({
   holiday,
   selectedDay,
@@ -400,13 +455,7 @@ export function HolidayBanner({
   const dayNumber = holidayLength({ start: holiday.start, end: selectedDay });
   const isLive = actualToday >= holiday.start && actualToday <= holiday.end;
 
-  const handleEnd = () => {
-    if (!window.confirm("End Holiday Mode and go back to your normal non-negotiables from today?"))
-      return;
-    endHolidayMode(holiday.id, actualToday);
-    toast.success("Holiday Mode ended. Back on plan.");
-    window.setTimeout(() => window.location.reload(), 250);
-  };
+  const handleEnd = () => confirmEndHoliday(holiday, actualToday);
 
   return (
     <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">

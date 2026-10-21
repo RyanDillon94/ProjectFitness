@@ -9,7 +9,7 @@ import { HevyCard } from "@/components/p35/hevy-card";
 import { CoachDrawer } from "@/components/p35/coach-drawer";
 import { Roadmap } from "@/components/p35/roadmap";
 import { DataBackupCard } from "@/components/p35/data-backup-card";
-import { DeloadCard } from "@/components/p35/deload-card";
+import { HolidayModeCard } from "@/components/p35/holiday-mode";
 import { FinaliseWeekBanner } from "@/components/p35/finalise-week-banner";
 import { useUserSettings, useWeighIns } from "@/lib/p35-cloud";
 import { WeeklyTrendsAnalytics } from "@/components/p35/weekly-trends-analytics";
@@ -158,6 +158,7 @@ function Dashboard({ userId }: { userId: string }) {
       {/* Footer Management Section */}
       <div className="flex flex-col items-center gap-2 pt-4 border-t border-border/40">
         <WeeklyTrendsAnalytics/>
+        <HolidayModeCard />
         <MissionArchiveCard />
         <DataBackupCard />
       </div>
