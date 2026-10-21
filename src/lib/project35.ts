@@ -1,5 +1,6 @@
 import { getCurrentDate, getDeloadOffset } from "../utils/dateUtils";
 import { getPlan, getPlanBlueprint } from "./planEngine";
+import { getHolidayForDate } from "./holidayMode";
 import type { BlockDef, HabitDefinition, PhaseDef, PlanState } from "./planTypes";
 
 export type {
@@ -130,6 +131,9 @@ export function getActiveBlockDetails(now = getCurrentDate()) {
 }
 
 export function getActiveHabits(now = getCurrentDate()): HabitDefinition[] {
+  const holiday = getHolidayForDate(now.toISOString().slice(0, 10));
+  if (holiday && holiday.habits.length > 0) return holiday.habits;
+
   const isWeekend = now.getDay() === 0 || now.getDay() === 6;
   const { activeBlock } = getActiveBlockDetails(now);
   const plan = getPlan();

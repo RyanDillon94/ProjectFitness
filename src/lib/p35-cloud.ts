@@ -117,6 +117,7 @@ export function buildFullBackup() {
     coachMessages: getLocal("p35_coach_messages", []),
     habits: getAllLocalHabits(),
     journals: getAllLocalJournals(),
+    holidayPeriods: getLocal("p35_holiday_periods", []),
   };
 }
 
@@ -378,6 +379,7 @@ export function importDashboardBackup(file: File): Promise<boolean> {
         if (data.workout) setLocal("p35_cached_workout", data.workout);
         if (data.coachMessages) setLocal("p35_coach_messages", data.coachMessages);
         if (data.archivedPhotos) setLocal("p35_archived_photos", data.archivedPhotos);
+        if (Array.isArray(data.holidayPeriods)) setLocal("p35_holiday_periods", data.holidayPeriods);
 
         if (data.photos) {
           if ("front" in data.photos) {

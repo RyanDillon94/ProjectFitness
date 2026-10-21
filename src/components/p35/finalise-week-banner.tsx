@@ -18,8 +18,16 @@ import {
 import { APP_NAME, IS_PROJECT_35 } from "@/lib/config";
 import { triggerFridayBackup } from "@/lib/p35-cloud";
 import {
+  HOLIDAY_HABIT_PREFIX,
+  formatHolidayRange,
+  getHolidaysInRange,
+  holidayLength,
+  type HolidayPeriod,
+} from "@/lib/holidayMode";
+import {
   CalendarCheck,
   Camera,
+  Palmtree,
   Loader2,
   Sparkles,
   Trophy,
@@ -677,6 +685,7 @@ export function FinaliseWeekBanner({
     aiSummary: string;
     hasRequiredWeighIn: boolean;
     isFinalised: boolean;
+    holidays: HolidayPeriod[];
   } | null>(null);
 
   // ============================================================
@@ -827,6 +836,16 @@ export function FinaliseWeekBanner({
     const journals: string[] = [];
     const hevyWorkouts: string[] = [];
 
+    const holidays = getHolidaysInRange(
+      mondayKey,
+      evaluationDateStr,
+    );
+
+    // Holiday weeks mix habit sets, so score each habit
+    // only on the days it was actually tracked.
+    const countByOccurrence =
+      holidays.length > 0;
+
     // ============================================================
     // 7-DAY HABIT/JOURNAL DATA
     // ============================================================
@@ -893,27 +912,50 @@ export function FinaliseWeekBanner({
             "early morning",
           );
 
+        const isHolidayHabit =
+          h.key.startsWith(
+            HOLIDAY_HABIT_PREFIX,
+          );
+
         if (
           isWeekend &&
-          isWeekdayOnly
+          isWeekdayOnly &&
+          !isHolidayHabit
         ) {
           return;
         }
 
-        if (!habitStats[h.key]) {
-          const expectedTotal =
-            isWeekdayOnly ? 5 : 7;
+        const isOccurrenceCounted =
+          countByOccurrence ||
+          isHolidayHabit;
 
-          habitStats[h.key] = {
+        let stat = habitStats[h.key];
+
+        if (!stat) {
+          const expectedTotal =
+            isOccurrenceCounted
+              ? 0
+              : isWeekdayOnly
+                ? 5
+                : 7;
+
+          stat = {
             label: h.label,
             completed: 0,
             total: expectedTotal,
             expectedTotal,
           };
+
+          habitStats[h.key] = stat;
+        }
+
+        if (isOccurrenceCounted) {
+          stat.total++;
+          stat.expectedTotal++;
         }
 
         if (parsedHabits[h.key]) {
-          habitStats[h.key].completed++;
+          stat.completed++;
         }
       });
 
@@ -1147,6 +1189,7 @@ export function FinaliseWeekBanner({
           : "Tap below to generate your AI weekly journal synthesis and performance verdict.",
         hasRequiredWeighIn,
         isFinalised,
+        holidays,
       };
     });
   }, [userId]);
@@ -1251,7 +1294,22 @@ export function FinaliseWeekBanner({
               .join("\n")
           : "No weigh-ins logged recently.";
 
-      const contextBundle = `Weekly Adherence: ${summaryData.overallPercentage}% (${summaryData.totalCompleted}/${summaryData.totalPossible} total checks).
+      const holidayText =
+        summaryData.holidays.length > 0
+          ? `HOLIDAY WEEK (OFF PLAN): ${summaryData.holidays
+              .map(
+                (h) =>
+                  `"${h.title}" ${h.start} to ${h.end} — holiday habits: ${h.habits
+                    .map((hb) => hb.label)
+                    .join(", ")}`,
+              )
+              .join("; ")}.
+The normal calorie, protein, step and routine standards were deliberately paused on holiday days and replaced by the agreed holiday habits. Judge holiday days against the holiday habits only, do not criticise missing normal targets on those days, and make Next Action about getting back on plan.
+
+`
+          : "";
+
+      const contextBundle = `${holidayText}Weekly Adherence: ${summaryData.overallPercentage}% (${summaryData.totalCompleted}/${summaryData.totalPossible} total checks).
 Habit Breakdown:
 ${breakdownText}
 
@@ -1466,8 +1524,33 @@ Do NOT output any empty bullet points. Do NOT alter the headers. Keep total resp
       }
     }
 
+    const weekHolidays =
+      getHolidaysInRange(
+        mondayKey,
+        lockDateStr,
+      );
+
     const weekArchiveRecord = {
       date: lockDateStr,
+
+      holidayMode:
+        weekHolidays.length > 0
+          ? {
+              periods: weekHolidays.map(
+                (h) => ({
+                  title: h.title,
+                  start: h.start,
+                  end: h.end,
+                  days: holidayLength(h),
+                  summary:
+                    h.summary ?? "",
+                  habits: h.habits.map(
+                    (hb) => hb.label,
+                  ),
+                }),
+              ),
+            }
+          : undefined,
 
       dateRange: `${formatShortDate(
         mondayKey,
@@ -1751,6 +1834,31 @@ Do NOT output any empty bullet points. Do NOT alter the headers. Keep total resp
                       {summaryData.isPhotoPending
                         ? "You locked in without uploading photos. Upload your checkpoint photos in the Photos module to clear this requirement."
                         : "This is your 4-week rotation marker. Upload your checkpoint photos in the Photos module to clear this requirement."}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {summaryData.holidays.length > 0 && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-3">
+                  <Palmtree className="size-5 text-amber-500 shrink-0 mt-0.5" />
+
+                  <div className="text-xs space-y-1">
+                    <p className="font-semibold text-amber-500">
+                      Holiday Week · Off Plan
+                    </p>
+
+                    {summaryData.holidays.map((h) => (
+                      <p
+                        key={h.id}
+                        className="text-muted-foreground"
+                      >
+                        {h.title}: {formatHolidayRange(h)}
+                      </p>
+                    ))}
+
+                    <p className="text-muted-foreground">
+                      This week will be archived as a holiday week, scored against your holiday habits.
                     </p>
                   </div>
                 </div>

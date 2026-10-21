@@ -2,7 +2,9 @@ import { Badge } from "@/components/ui/badge";
 import { getActiveBlockCountdown } from "@/lib/project35";
 import { getPlan } from "@/lib/planEngine";
 import { APP_NAME, APP_TAGLINE, IS_PROJECT_35 } from "@/lib/config";
-import { Calendar, Flame, ShieldHalf, Target } from "lucide-react";
+import { getHolidayForDate } from "@/lib/holidayMode";
+import { todayKey } from "@/lib/project35";
+import { Calendar, Flame, Palmtree, ShieldHalf, Target } from "lucide-react";
 
 export function DashboardHeader() {
   const plan = getPlan();
@@ -20,6 +22,8 @@ export function DashboardHeader() {
     daysLeft,
     progress,
   } = getActiveBlockCountdown();
+
+  const holiday = getHolidayForDate(todayKey());
 
   return (
     <header className="panel glow-ring relative overflow-hidden p-5 space-y-4">
@@ -44,6 +48,12 @@ export function DashboardHeader() {
           <Flame className="size-3.5" />
           Phase {phaseId} &bull; {blockName}
         </Badge>
+        {holiday && (
+          <Badge className="gap-1.5 bg-amber-500/15 text-amber-500 hover:bg-amber-500/20">
+            <Palmtree className="size-3.5" />
+            Holiday Mode
+          </Badge>
+        )}
       </div>
 
       {/* Block Date Range & Objective Callout */}
