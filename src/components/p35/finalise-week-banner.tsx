@@ -912,18 +912,22 @@ export function FinaliseWeekBanner({
             "early morning",
           );
 
+        const isHolidayHabit =
+          h.key.startsWith(
+            HOLIDAY_HABIT_PREFIX,
+          );
+
         if (
           isWeekend &&
-          isWeekdayOnly
+          isWeekdayOnly &&
+          !isHolidayHabit
         ) {
           return;
         }
 
         const isOccurrenceCounted =
           countByOccurrence ||
-          h.key.startsWith(
-            HOLIDAY_HABIT_PREFIX,
-          );
+          isHolidayHabit;
 
         let stat = habitStats[h.key];
 

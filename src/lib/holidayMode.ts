@@ -90,12 +90,15 @@ function slugify(text: string): string {
   );
 }
 
-export function buildHolidayHabits(drafts: HolidayDraft["habits"]): HabitDefinition[] {
+export function buildHolidayHabits(
+  drafts: HolidayDraft["habits"],
+  periodTag: string,
+): HabitDefinition[] {
   const used = new Set<string>();
   return drafts
     .filter((h) => typeof h?.label === "string" && h.label.trim())
     .map((h) => {
-      const base = `${HOLIDAY_HABIT_PREFIX}${slugify(h.label)}`;
+      const base = `${HOLIDAY_HABIT_PREFIX}${periodTag}_${slugify(h.label)}`;
       let key = base;
       let n = 2;
       while (used.has(key)) key = `${base}_${n++}`;
@@ -117,12 +120,13 @@ export function activateHolidayMode(draft: HolidayDraft, startKey: string): Holi
   );
   const end = shiftDateKey(startKey, days - 1);
 
+  const createdMs = Date.now();
   const period: HolidayPeriod = {
-    id: `${startKey}-${Date.now()}`,
+    id: `${startKey}-${createdMs}`,
     title: draft.title?.trim() || "Holiday Week",
     start: startKey,
     end,
-    habits: buildHolidayHabits(draft.habits ?? []),
+    habits: buildHolidayHabits(draft.habits ?? [], createdMs.toString(36)),
     ...(draft.summary?.trim() ? { summary: draft.summary.trim() } : {}),
     createdAt: new Date().toISOString(),
   };

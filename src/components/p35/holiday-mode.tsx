@@ -67,7 +67,10 @@ Do NOT generate JSON until the athlete explicitly confirms (e.g. "Yes", "Do it",
 FINAL JSON
 ============================================================
 
-ONLY after explicit confirmation, briefly state what was agreed, then output:
+ONLY after explicit confirmation, briefly state what was agreed, then output the JSON below.
+Do NOT say Holiday Mode is active, switched on or locked in — the athlete still has to review
+the habits and press "Activate". End your short summary with something like
+"Review below and hit Activate to switch it on."
 
 \`\`\`json
 {
