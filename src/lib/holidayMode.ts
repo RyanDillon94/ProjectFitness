@@ -21,6 +21,8 @@ export type HolidayPeriod = {
 
 export type HolidayDraft = {
   title: string;
+  /** Inclusive YYYY-MM-DD start; defaults to today when omitted. */
+  start?: string;
   days: number;
   habits: { label: string; sublabel?: string }[];
   summary?: string;
@@ -28,6 +30,8 @@ export type HolidayDraft = {
 
 export const MIN_HOLIDAY_DAYS = 1;
 export const MAX_HOLIDAY_DAYS = 14;
+/** How far ahead a holiday can be scheduled. */
+export const MAX_HOLIDAY_LEAD_DAYS = 60;
 
 export function shiftDateKey(dateKey: string, days: number): string {
   const [y, m, d] = dateKey.split("-").map(Number);
@@ -73,6 +77,11 @@ export function saveHolidayPeriods(periods: HolidayPeriod[]) {
 
 export function getHolidayForDate(dateKey: string): HolidayPeriod | null {
   return getHolidayPeriods().find((p) => dateKey >= p.start && dateKey <= p.end) ?? null;
+}
+
+/** The next holiday that starts after `todayKey`, if one is scheduled. */
+export function getUpcomingHoliday(todayKey: string): HolidayPeriod | null {
+  return getHolidayPeriods().find((p) => p.start > todayKey) ?? null;
 }
 
 /** Holidays that overlap the inclusive range, in date order. */

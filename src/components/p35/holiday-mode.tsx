@@ -15,11 +15,13 @@ import { APP_NAME } from "@/lib/config";
 import { DAILY_TARGETS, getActiveHabits, todayKey } from "@/lib/project35";
 import {
   MAX_HOLIDAY_DAYS,
+  MAX_HOLIDAY_LEAD_DAYS,
   MIN_HOLIDAY_DAYS,
   activateHolidayMode,
   endHolidayMode,
   formatHolidayRange,
   getHolidayForDate,
+  getUpcomingHoliday,
   holidayLength,
   shiftDateKey,
   type HolidayDraft,
@@ -27,8 +29,19 @@ import {
 } from "@/lib/holidayMode";
 import { callGemini, FormattedMessage, type ChatMessage } from "./RecalibrateModal";
 
-function buildHolidaySystemPrompt(startKey: string): string {
-  const normalHabits = getActiveHabits(new Date(`${startKey}T12:00:00Z`))
+function describeDay(key: string): string {
+  return new Date(`${key}T12:00:00Z`).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function buildHolidaySystemPrompt(todayDateKey: string): string {
+  const tomorrowKey = shiftDateKey(todayDateKey, 1);
+  const normalHabits = getActiveHabits(new Date(`${todayDateKey}T12:00:00Z`))
     .map((h) => `- ${h.label} (${h.sublabel})`)
     .join("\n");
 
@@ -37,7 +50,12 @@ function buildHolidaySystemPrompt(startKey: string): string {
 The athlete is about to go on holiday and wants to switch on HOLIDAY MODE.
 
 Holiday Mode temporarily replaces the athlete's normal daily non-negotiables with a
-short list of holiday habits for a fixed number of days starting TODAY (${startKey}).
+short list of holiday habits for a fixed number of consecutive days. It can start today or on a
+later date (up to ${MAX_HOLIDAY_LEAD_DAYS} days ahead).
+
+TODAY is ${describeDay(todayDateKey)} (${todayDateKey}).
+TOMORROW is ${describeDay(tomorrowKey)} (${tomorrowKey}).
+Use these to turn phrases like "tomorrow", "Monday" or "next Friday" into exact dates.
 It does NOT change the roadmap, phases, block dates or daily targets. The week is simply
 marked as "off plan" in the archive.
 
@@ -50,14 +68,16 @@ NORMAL DAILY TARGETS: ${DAILY_TARGETS.caloriesMin}–${DAILY_TARGETS.caloriesMax
 YOUR JOB
 ============================================================
 
-1. Briefly find out what the holiday looks like: how many days (normally 5–7, starting today),
+1. Briefly find out what the holiday looks like: which day it starts (today or later) and how
+   many days it lasts (normally 5–7; "Monday to Friday" = 5 days),
    where/what kind of trip, gym or kit access, eating out, drinking, activity levels.
    Ask at most 2–3 short questions at a time.
 2. Propose 3–6 realistic holiday habits. Each must be a simple daily yes/no checkbox the
    athlete can tick every day of the holiday (e.g. "8,000+ steps", "Protein with every meal",
    "Max 4 drinks", "2L water", "15 min bodyweight circuit"). Keep them achievable — the goal is
    to protect momentum, not to pretend it is a normal training week.
-3. Confirm the number of days (${MIN_HOLIDAY_DAYS}–${MAX_HOLIDAY_DAYS}) and the final habit list.
+3. Confirm the start date, the number of days (${MIN_HOLIDAY_DAYS}–${MAX_HOLIDAY_DAYS}) and the final
+   habit list. State the dates as weekday + date (e.g. "Monday 26 October to Friday 30 October").
 4. Ask the athlete to explicitly confirm.
 
 Do NOT generate JSON until the athlete explicitly confirms (e.g. "Yes", "Do it", "Lock it in",
@@ -75,6 +95,7 @@ the habits and press "Activate". End your short summary with something like
 \`\`\`json
 {
   "title": "Short holiday name, e.g. Tenerife Week",
+  "start": "${todayDateKey}",
   "days": 7,
   "habits": [
     { "label": "8,000+ Steps", "sublabel": "Explore on foot" }
@@ -82,6 +103,10 @@ the habits and press "Activate". End your short summary with something like
   "summary": "One sentence describing the holiday approach."
 }
 \`\`\`
+
+"start" is the first holiday day as YYYY-MM-DD (today or later). "days" counts the start day,
+so Monday to Friday is "days": 5. If the athlete changes the dates, output the new JSON with the
+corrected "start" and "days".
 
 Do not modify localStorage. The application handles saving.
 
@@ -92,7 +117,15 @@ FORMATTING
 Be direct and friendly. No emoji. Keep replies short, use blank lines between sections.`;
 }
 
-function parseHolidayDraft(raw: unknown): HolidayDraft | null {
+function parseHolidayStart(value: unknown, todayDateKey: string): string | undefined {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  if (Number.isNaN(new Date(`${value}T00:00:00Z`).getTime())) return undefined;
+  if (value < todayDateKey) return undefined;
+  if (value > shiftDateKey(todayDateKey, MAX_HOLIDAY_LEAD_DAYS)) return undefined;
+  return value;
+}
+
+function parseHolidayDraft(raw: unknown, todayDateKey: string): HolidayDraft | null {
   if (!raw || typeof raw !== "object") return null;
   const data = raw as Record<string, unknown>;
   const habits = Array.isArray(data["habits"])
@@ -113,8 +146,10 @@ function parseHolidayDraft(raw: unknown): HolidayDraft | null {
   if (habits.length === 0) return null;
 
   const summary = typeof data["summary"] === "string" ? data["summary"] : undefined;
+  const start = parseHolidayStart(data["start"], todayDateKey);
   return {
     title: typeof data["title"] === "string" ? data["title"] : "Holiday Week",
+    ...(start ? { start } : {}),
     days: Number(data["days"]) || 7,
     habits,
     ...(summary ? { summary } : {}),
@@ -153,7 +188,7 @@ export function HolidayModeDialog({ trigger }: { trigger?: ReactNode } = {}) {
         setMessages([
           {
             role: "model",
-            text: "Holiday Mode. Your normal non-negotiables get paused and we set a few holiday habits instead — block dates stay exactly as they are.\n\nWhere are you going, how many days is it, and what will food, drink and activity look like?",
+            text: "Holiday Mode. Your normal non-negotiables get paused and we set a few holiday habits instead — block dates stay exactly as they are.\n\nWhere are you going, which day does it start and how many days is it, and what will food, drink and activity look like?",
           },
         ]);
       }
@@ -188,7 +223,7 @@ export function HolidayModeDialog({ trigger }: { trigger?: ReactNode } = {}) {
         if (jsonMatch) {
           let draft: HolidayDraft | null = null;
           try {
-            draft = parseHolidayDraft(JSON.parse((jsonMatch[1] ?? "").trim()));
+            draft = parseHolidayDraft(JSON.parse((jsonMatch[1] ?? "").trim()), startKey);
           } catch (error) {
             console.error("Failed to parse holiday JSON", error, reply);
           }
@@ -224,7 +259,7 @@ export function HolidayModeDialog({ trigger }: { trigger?: ReactNode } = {}) {
   const activate = useCallback(() => {
     if (!pending) return;
     try {
-      const period = activateHolidayMode(pending, startKey);
+      const period = activateHolidayMode(pending, pending.start ?? startKey);
       toast.success(`Holiday Mode active: ${formatHolidayRange(period)}`);
       setPending(null);
       setIsOpen(false);
@@ -246,6 +281,7 @@ export function HolidayModeDialog({ trigger }: { trigger?: ReactNode } = {}) {
   const pendingDays = pending
     ? Math.min(MAX_HOLIDAY_DAYS, Math.max(MIN_HOLIDAY_DAYS, Math.round(pending.days)))
     : 0;
+  const pendingStart = pending?.start ?? startKey;
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -302,8 +338,8 @@ export function HolidayModeDialog({ trigger }: { trigger?: ReactNode } = {}) {
               </div>
               <p className="text-xs text-muted-foreground">
                 {formatHolidayRange({
-                  start: startKey,
-                  end: shiftDateKey(startKey, pendingDays - 1),
+                  start: pendingStart,
+                  end: shiftDateKey(pendingStart, pendingDays - 1),
                 })}{" "}
                 ({pendingDays} {pendingDays === 1 ? "day" : "days"})
               </p>
@@ -402,9 +438,17 @@ function confirmEndHoliday(holiday: HolidayPeriod, today: string) {
   window.setTimeout(() => window.location.reload(), 250);
 }
 
+function confirmCancelUpcoming(holiday: HolidayPeriod, today: string) {
+  if (!window.confirm(`Cancel the scheduled holiday "${holiday.title}"?`)) return;
+  endHolidayMode(holiday.id, today);
+  toast.success("Scheduled holiday cancelled.");
+  window.setTimeout(() => window.location.reload(), 250);
+}
+
 export function HolidayModeCard() {
   const today = todayKey();
   const holiday = getHolidayForDate(today);
+  const upcoming = holiday ? null : getUpcomingHoliday(today);
 
   return (
     <div
@@ -417,7 +461,11 @@ export function HolidayModeCard() {
         <div className="min-w-0 w-full">
           <p className="text-sm font-bold truncate text-foreground">Holiday Mode</p>
           <p className="text-xs text-muted-foreground truncate w-full">
-            {holiday ? `${holiday.title} · ${formatHolidayRange(holiday)}` : "Standard Execution"}
+            {holiday
+              ? `${holiday.title} · ${formatHolidayRange(holiday)}`
+              : upcoming
+                ? `Scheduled: ${upcoming.title} · ${formatHolidayRange(upcoming)}`
+                : "Standard Execution"}
           </p>
         </div>
       </div>
@@ -431,6 +479,16 @@ export function HolidayModeCard() {
         >
           <Umbrella className="size-3.5" />
           <span>End</span>
+        </Button>
+      ) : upcoming ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => confirmCancelUpcoming(upcoming, today)}
+          className="gap-1.5 h-8 text-xs shrink-0 border border-amber-500/40 text-amber-500"
+        >
+          <X className="size-3.5" />
+          <span>Cancel</span>
         </Button>
       ) : (
         <HolidayModeDialog
