@@ -158,8 +158,8 @@ function Dashboard({ userId }: { userId: string }) {
       {/* Footer Management Section */}
       <div className="flex flex-col items-center gap-2 pt-4 border-t border-border/40">
         <WeeklyTrendsAnalytics/>
-        <HolidayModeCard />
         <MissionArchiveCard />
+        <HolidayModeCard />
         <DataBackupCard />
       </div>
 
