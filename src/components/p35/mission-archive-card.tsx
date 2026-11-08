@@ -518,7 +518,7 @@ export function MissionArchiveCard() {
                       )}
 
                       {/* HABIT ADHERENCE */}
-                      {adherenceRows.length > 0 && (
+                      {!isHolidayWeek && adherenceRows.length > 0 && (
                         <div className="space-y-2">
                           <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
                             Habit Adherence
