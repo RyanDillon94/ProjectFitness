@@ -333,6 +333,14 @@ export function MissionArchiveCard() {
               const holidayPeriods = archive.holidayMode?.periods ?? [];
               const isHolidayWeek = holidayPeriods.length > 0;
 
+              // Habits already shown in the holiday card, so they aren't duplicated
+              const holidayHabits = new Set(
+                holidayPeriods.flatMap((p) => p.habits)
+              );
+              const adherenceRows = (archive.breakdown ?? []).filter(
+                (b) => !holidayHabits.has(b.label)
+              );
+
               return (
                 <div
                   key={archive.date}
@@ -506,6 +514,58 @@ export function MissionArchiveCard() {
                               </ul>
                             </div>
                           ))}
+                        </div>
+                      )}
+
+                      {/* HABIT ADHERENCE */}
+                      {adherenceRows.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                            Habit Adherence
+                          </p>
+
+                          <ul className="space-y-1.5">
+                            {adherenceRows.map((b) => {
+                              const pct =
+                                b.total > 0
+                                  ? Math.round((b.completed / b.total) * 100)
+                                  : 0;
+
+                              return (
+                                <li key={b.label} className="space-y-1">
+                                  <div className="flex items-center justify-between gap-2 text-xs">
+                                    <span className="text-foreground/90">
+                                      {b.label}
+                                    </span>
+                                    <span
+                                      className={`font-semibold ${
+                                        pct >= 80
+                                          ? "text-emerald-400"
+                                          : pct >= 50
+                                          ? "text-amber-400"
+                                          : "text-rose-400"
+                                      }`}
+                                    >
+                                      {b.completed}/{b.total}
+                                    </span>
+                                  </div>
+
+                                  <div className="h-1 w-full rounded-full bg-surface-2">
+                                    <div
+                                      className={`h-1 rounded-full ${
+                                        pct >= 80
+                                          ? "bg-emerald-500"
+                                          : pct >= 50
+                                          ? "bg-amber-500"
+                                          : "bg-rose-500"
+                                      }`}
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
                         </div>
                       )}
 
