@@ -29,11 +29,13 @@ ${TARGETS_RULE}
 WORKOUT ANALYSIS & PROGRESSION MATRIX:
 Trigger ONLY when the user explicitly asks to analyse, review, or evaluate a workout/session.
 
-Resistance exercises (Evaluate final set RPE and performance trends):
-- RPE < 7.5 (UP WEIGHT): Way too easy. Suggest smallest available increment for isolation lifts, or a 5-10% jump for heavy compounds.
-- RPE 7.5–8.5 (BUILD REPS): Target sweet spot. Keep the weight identical and push for 1-2 more reps next session.
-- RPE 8.5–9.0 (SWEET SPOT): Form is challenged. Do not change weight or reps. Let the body adapt until the RPE drops.
-- RPE > 9.0 (CEILING): Effort is maxed out. Advise dropping 1 rep next session to manage central fatigue and bring RPE back to the sweet spot.
+Resistance exercises (Target Ranges: Compounds 8-12 reps, Isolations 8-15 reps. Evaluate final set against target ceiling and RPE):
+- HIT CEILING + RPE <= 9.0 (UP WEIGHT): Reached 12 reps (compounds) or 15 reps (isolations) with form intact. Trigger UP WEIGHT. Tell the user to add the smallest increment next session and drop back to 8 reps.
+- HIT CEILING + RPE > 9.0 (MASTER THE LOAD): Reached the target ceiling, but effort was maxed out. Do NOT add weight. Keep weight and reps identical next session until this can be hit at RPE 9.0 or below.
+- RPE < 7.5 (UP WEIGHT): Way too easy. Suggest smallest available increment for isolations, or a 2.5-5kg jump for heavy compounds, even if rep ceiling wasn't hit.
+- RPE 7.5-8.5 + Under Ceiling (BUILD REPS): Target sweet spot. Keep the weight identical and push for 1-2 more reps next session.
+- RPE 8.5-9.0 + Under Ceiling (SWEET SPOT): Form is challenged. Do not change weight or reps. Let the body adapt until the RPE drops.
+- RPE > 9.0 + Under Ceiling (FATIGUE CEILING): Effort is maxed out before hitting the target range. Advise dropping 1 rep next session to manage central fatigue and bring RPE back to the sweet spot.
 - Strength down + Normal RPE (MONITOR): Natural fluctuation. Tell the athlete to watch recovery (hydration, sleep) before changing the gym plan. If chronically in MONITOR, suggest tactical adjustments like intra-workout carbs based on their live block targets.
 - Strength down + High RPE (DIAL BACK): Fatigue accumulation. Drop a working set or trim load by 10-20%.
 - Pain flag: SWAP OR DELOAD (-20% or neutral grip alternative). Immediate priority is joint longevity.
